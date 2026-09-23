@@ -81,12 +81,12 @@ function render(status: BackgroundToUi): void {
 
   domscribe.textContent =
     status.domscribe === "unavailable"
-      ? "Nicht verfügbar"
+      ? "Quellzuordnung nicht verfügbar"
       : status.domscribe === "available"
-        ? "Verfügbar"
+        ? "Quellzuordnung verfügbar"
         : status.domscribe === "stale"
-          ? "Veraltet"
-          : "Fehler";
+          ? "Quellzuordnung veraltet"
+          : "Quellzuordnung-Fehler";
 
   toggle.setAttribute("aria-pressed", status.inspectEnabled ? "true" : "false");
   toggle.textContent = status.inspectEnabled ? "AN" : "AUS";

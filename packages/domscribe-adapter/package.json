@@ -3,15 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Domscribe adapter placeholder (SLC-4)",
+  "description": "Domscribe SourceResolver adapter (SLC-4)",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && node --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@agent-visual-editor/core": "*"
   }
 }

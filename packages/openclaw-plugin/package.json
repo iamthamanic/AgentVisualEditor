@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@agent-visual-editor/core": "*",
+    "@agent-visual-editor/domscribe-adapter": "*",
     "@agent-visual-editor/protocol": "*",
     "typebox": "^1.3.17"
   },

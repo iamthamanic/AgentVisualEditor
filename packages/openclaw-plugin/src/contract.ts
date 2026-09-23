@@ -461,7 +461,12 @@ export const contract = defineFeatureContract({
             Type.Literal("none"),
             Type.Literal("ambiguous"),
           ]),
-          domscribeStatus: Type.Literal("unavailable"),
+          domscribeStatus: Type.Union([
+            Type.Literal("unavailable"),
+            Type.Literal("available"),
+            Type.Literal("stale"),
+            Type.Literal("error"),
+          ]),
           protocolVersion: Type.Integer(),
         },
         { additionalProperties: false },

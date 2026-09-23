@@ -12,7 +12,7 @@ OpenClaw feature plugin + browser extension monorepo for Cursor-like visual sele
 | `packages/protocol` | Bridge message schemas (C-006..C-009), `PROTOCOL_VERSION=1` |
 | `packages/openclaw-plugin` | OpenClaw feature plugin + Control UI chips |
 | `packages/extension` | Chrome MV3 extension (placeholder, SLC-2) |
-| `packages/domscribe-adapter` | Domscribe adapter (placeholder, SLC-4) |
+| `packages/domscribe-adapter` | Domscribe SourceResolver (`data-ds` → SourceContext, degraded when absent) |
 | `packages/mcp-adapter` | Generic MCP adapter (placeholder, SLC-7) |
 
 ## Requirements

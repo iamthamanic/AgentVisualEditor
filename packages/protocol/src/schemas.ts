@@ -396,6 +396,8 @@ export type SelectionResultOk = {
   deduped?: boolean;
   removed?: boolean;
   revision?: number;
+  /** SLC-4: source freshness after resolve (extension status wiring). */
+  sourceFreshness?: "fresh" | "stale" | "unmapped" | "unavailable";
 };
 
 export type BridgeOkResponse = SelectionResultOk | BridgeHelloAck;

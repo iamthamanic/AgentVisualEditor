@@ -7,9 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol && npm run typecheck --workspaces --if-present",
-    "build": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol && npm run build --workspaces --if-present",
-    "test": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol && npm run test --workspaces --if-present",
+    "typecheck": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol -w @agent-visual-editor/domscribe-adapter && npm run typecheck --workspaces --if-present",
+    "build": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol -w @agent-visual-editor/domscribe-adapter && npm run build --workspaces --if-present",
+    "test": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol -w @agent-visual-editor/domscribe-adapter && npm run test --workspaces --if-present",
     "setup:host": "node scripts/setup-host-toolchain.mjs"
   },
   "engines": {

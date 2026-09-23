@@ -1,10 +1,11 @@
 /**
- * AgentVisualEditor OpenClaw feature plugin entry (SLC-1..SLC-3).
+ * AgentVisualEditor OpenClaw feature plugin entry (SLC-1..SLC-4).
  * Location: packages/openclaw-plugin/src/index.ts
  *
  * INV-1: chip ops never send. INV-3: session binding fail-closed.
  * INV-4: plugin-scoped pairing only.
  * SLC-3: prepare_send/send_outcome + next-turn injection + agent tools.
+ * SLC-4: Domscribe SourceResolver on selection path (degraded when absent).
  */
 
 import { defineFeaturePlugin, type FeatureInvocationContext } from "openclaw/plugin-sdk/feature-plugin";
@@ -15,6 +16,11 @@ import {
   PayloadTooLargeError,
   type SourceContext,
 } from "@agent-visual-editor/core";
+import {
+  createHttpRelayLookup,
+  createSourceResolver,
+  type SourceResolver,
+} from "@agent-visual-editor/domscribe-adapter";
 import { PROTOCOL_VERSION } from "@agent-visual-editor/protocol";
 import { ActiveSessionTracker } from "./active-session.js";
 import { registerBridgeRoutes, type BridgeHub } from "./bridge-routes.js";
@@ -27,6 +33,20 @@ import { VisualBatchStore } from "./store.js";
 import { toActiveContextDto, toSelectionDetailDto } from "./tool-payloads.js";
 
 const SESSION_EXT_NAMESPACE = "visualBatch";
+
+function buildSourceResolver(config: ReturnType<typeof readAveConfig>): SourceResolver {
+  if (!config.domscribeEnabled) {
+    return createSourceResolver({ enabled: false });
+  }
+  if (config.domscribeRelayUrl) {
+    return createSourceResolver({
+      enabled: true,
+      lookup: createHttpRelayLookup({ baseUrl: config.domscribeRelayUrl }),
+    });
+  }
+  // Auto without relay URL: degraded until URL configured or tests inject a lookup.
+  return createSourceResolver({ enabled: true });
+}
 
 type OpErrorCode =
   | "no_session_context"
@@ -114,6 +134,7 @@ const plugin = defineFeaturePlugin({
     const pairing = new PairingStore();
     const sessions = new ActiveSessionTracker();
     const config = readAveConfig(api.pluginConfig);
+    const sourceResolver = buildSourceResolver(config);
 
     let bridgeHub: BridgeHub | undefined;
 
@@ -136,6 +157,7 @@ const plugin = defineFeaturePlugin({
       sessions,
       store,
       onBatchChanged: emitChanged,
+      sourceResolver,
     });
 
     sessions.subscribe((event) => {
@@ -466,7 +488,7 @@ const plugin = defineFeaturePlugin({
           pairedConnectionCount: active.length,
           activeSessionAvailable: sessions.hasExactSession(),
           activeSessionStatus: snap.status,
-          domscribeStatus: "unavailable" as const,
+          domscribeStatus: sourceResolver.lastStatus(),
           protocolVersion: PROTOCOL_VERSION,
         };
       },
@@ -487,6 +509,15 @@ const aveConfigSchema = buildJsonPluginConfigSchema({
       type: "boolean",
       default: false,
       description: "Show debug Test-Selektion button in the composer.",
+    },
+    domscribeEnabled: {
+      type: "boolean",
+      default: true,
+      description: "Attempt Domscribe source resolve when a relay URL is configured (auto).",
+    },
+    domscribeRelayUrl: {
+      type: "string",
+      description: "Optional Domscribe relay base URL (http://127.0.0.1:PORT).",
     },
   },
 });
@@ -515,6 +546,15 @@ for (const symbol of Object.getOwnPropertySymbols(plugin)) {
           type: "boolean",
           default: false,
           description: "Show debug Test-Selektion button in the composer.",
+        },
+        domscribeEnabled: {
+          type: "boolean",
+          default: true,
+          description: "Attempt Domscribe source resolve when a relay URL is configured (auto).",
+        },
+        domscribeRelayUrl: {
+          type: "string",
+          description: "Optional Domscribe relay base URL (http://127.0.0.1:PORT).",
         },
       },
     });

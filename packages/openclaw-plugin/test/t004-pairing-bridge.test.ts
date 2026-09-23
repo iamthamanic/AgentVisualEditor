@@ -78,7 +78,7 @@ describe("T-004 pairing + bridge selection", () => {
     }
   });
 
-  it("selection.create attaches chip for exact active session without send", () => {
+  it("selection.create attaches chip for exact active session without send", async () => {
     const store = new VisualBatchStore();
     const sessions = new ActiveSessionTracker();
     sessions.report({
@@ -112,7 +112,7 @@ describe("T-004 pairing + bridge selection", () => {
       },
     });
 
-    const created = handler.handleRaw({
+    const created = await handler.handleRaw({
       type: "selection.create",
       protocolVersion: 1,
       requestId: "req-1",
@@ -129,7 +129,7 @@ describe("T-004 pairing + bridge selection", () => {
     assert.equal(sendCalls, 1); // batch-changed callback only — not agent send
 
     // requestId dedupe
-    const again = handler.handleRaw({
+    const again = await handler.handleRaw({
       type: "selection.create",
       protocolVersion: 1,
       requestId: "req-1",
@@ -139,7 +139,7 @@ describe("T-004 pairing + bridge selection", () => {
     assert.deepEqual(again, created);
     assert.equal(store.snapshot("agent-1", "session-a").selections.length, 1);
 
-    const removed = handler.handleRaw({
+    const removed = await handler.handleRaw({
       type: "selection.remove",
       protocolVersion: 1,
       requestId: "req-2",
@@ -149,7 +149,7 @@ describe("T-004 pairing + bridge selection", () => {
     assert.equal(store.snapshot("agent-1", "session-a").selections.length, 0);
   });
 
-  it("fail-closed without active session", () => {
+  it("fail-closed without active session", async () => {
     const store = new VisualBatchStore();
     const sessions = new ActiveSessionTracker();
     const pairing = new PairingStore();
@@ -168,7 +168,7 @@ describe("T-004 pairing + bridge selection", () => {
     if (!connection) return;
 
     const handler = new BridgeMessageHandler({ store, sessions, connection });
-    const result = handler.handleRaw({
+    const result = await handler.handleRaw({
       type: "selection.create",
       protocolVersion: 1,
       requestId: "req-no-session",

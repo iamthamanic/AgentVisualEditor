@@ -20,6 +20,7 @@ export type BridgeClientCallbacks = {
     ok: boolean;
     selectionId?: string;
     message?: string;
+    sourceFreshness?: string;
   }) => void;
 };
 
@@ -227,7 +228,13 @@ export class BridgeClient {
     }
 
     if (msg.ok === true && typeof msg.selectionId === "string") {
-      this.callbacks.onSelectionResult({ ok: true, selectionId: msg.selectionId });
+      this.callbacks.onSelectionResult({
+        ok: true,
+        selectionId: msg.selectionId,
+        ...(typeof msg.sourceFreshness === "string"
+          ? { sourceFreshness: msg.sourceFreshness }
+          : {}),
+      });
       return;
     }
 

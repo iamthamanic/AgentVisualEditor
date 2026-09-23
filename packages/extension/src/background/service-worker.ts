@@ -33,7 +33,14 @@ let chat: ActiveChatTarget = {
 let inspectEnabled = false;
 let lastSelectionId: string | null = null;
 let lastError: string | null = null;
-const domscribe: DomscribeUiState = "unavailable";
+let domscribe: DomscribeUiState = "unavailable";
+
+function mapSourceFreshness(value: unknown): DomscribeUiState | undefined {
+  if (value === "fresh") return "available";
+  if (value === "stale") return "stale";
+  if (value === "unavailable" || value === "unmapped") return "unavailable";
+  return undefined;
+}
 
 function statusPayload(): BackgroundToUi {
   return {
@@ -93,6 +100,10 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
       if (result.ok && result.selectionId) {
         lastSelectionId = result.selectionId;
         lastError = null;
+        const mapped = mapSourceFreshness(result.sourceFreshness);
+        if (mapped !== undefined) {
+          domscribe = mapped;
+        }
       } else if (result.message) {
         lastError = result.message;
       }
