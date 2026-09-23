@@ -16,6 +16,15 @@
         "type": "boolean",
         "default": false,
         "description": "Show debug Test-Selektion button in the composer."
+      },
+      "domscribeEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Attempt Domscribe source resolve when a relay URL is configured (auto)."
+      },
+      "domscribeRelayUrl": {
+        "type": "string",
+        "description": "Optional Domscribe relay base URL (http://127.0.0.1:PORT)."
       }
     }
   },
@@ -23,9 +32,9 @@
     "onStartup": true
   },
   "controlUi": {
-    "entry": "dist/control-ui/35fa7cba5252f0f9d739fb2a6d1e71c9beb4e9964ddc5feddf91fb55819ea6b2/index.js",
+    "entry": "dist/control-ui/329b8bf2a69eb44257fb058a5a75255aa1070ad382bcb991940b50d20767438e/index.js",
     "styles": [
-      "dist/control-ui/35fa7cba5252f0f9d739fb2a6d1e71c9beb4e9964ddc5feddf91fb55819ea6b2/index.css"
+      "dist/control-ui/329b8bf2a69eb44257fb058a5a75255aa1070ad382bcb991940b50d20767438e/index.css"
     ]
   },
   "contracts": {

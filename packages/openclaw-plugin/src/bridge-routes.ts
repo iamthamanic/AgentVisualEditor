@@ -18,6 +18,7 @@ import {
   type ActiveSessionChanged,
   type ErrorEnvelope,
 } from "@agent-visual-editor/protocol";
+import type { SourceResolver } from "@agent-visual-editor/domscribe-adapter";
 import type { ActiveSessionTracker } from "./active-session.js";
 import { BridgeMessageHandler } from "./bridge-handler.js";
 import {
@@ -109,6 +110,7 @@ export type BridgeRouteContext = {
   sessions: ActiveSessionTracker;
   store: VisualBatchStore;
   onBatchChanged: (agentId: string, sessionKey: string) => void;
+  sourceResolver?: SourceResolver;
 };
 
 export type LiveBridgeSocket = {
@@ -259,6 +261,9 @@ export class BridgeHub {
       sessions: this.ctx.sessions,
       connection,
       onBatchChanged: this.ctx.onBatchChanged,
+      ...(this.ctx.sourceResolver !== undefined
+        ? { sourceResolver: this.ctx.sourceResolver }
+        : {}),
     });
 
     const live: LiveBridgeSocket = {
@@ -310,8 +315,9 @@ export class BridgeHub {
         );
         return;
       }
-      const result = handler.handleRaw(raw);
-      ws.send(JSON.stringify(result));
+      void handler.handleRaw(raw).then((result) => {
+        ws.send(JSON.stringify(result));
+      });
     });
 
     ws.on("close", () => {

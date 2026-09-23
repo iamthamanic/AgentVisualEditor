@@ -90,10 +90,18 @@ export default defineControlUiPlugin({
             const health = await feature.invoke("get_health", {});
             const connections = await feature.invoke("list_connections", {});
             if (disposed) return;
+            const domscribeDe =
+              health.domscribeStatus === "available"
+                ? "Quellzuordnung verfügbar"
+                : health.domscribeStatus === "stale"
+                  ? "Quellzuordnung veraltet"
+                  : health.domscribeStatus === "error"
+                    ? "Quellzuordnung-Fehler"
+                    : "Quellzuordnung nicht verfügbar";
             status.textContent =
               `Plugin aktiv · Bridge ${health.bridgePath} · ` +
               `Session: ${health.activeSessionStatus} · ` +
-              `Domscribe: ${health.domscribeStatus} · ` +
+              `Domscribe: ${domscribeDe} · ` +
               `Verbindungen: ${health.pairedConnectionCount}`;
 
             connList.replaceChildren();

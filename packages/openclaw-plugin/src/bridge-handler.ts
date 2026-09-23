@@ -1,6 +1,8 @@
 /**
  * Bridge message dispatcher → VisualBatchStore (C-004..C-009). INV-1: never send.
  * Location: packages/openclaw-plugin/src/bridge-handler.ts
+ *
+ * SLC-4: resolves data-ds via SourceResolver before admit (FR-011/FR-012).
  */
 
 import {
@@ -8,8 +10,10 @@ import {
   LimitReachedError,
   PayloadTooLargeError,
   type SelectionDraftInput,
+  type SourceContext,
   type VisualChange,
 } from "@agent-visual-editor/core";
+import type { SourceResolver } from "@agent-visual-editor/domscribe-adapter";
 import {
   PROTOCOL_VERSION,
   parseInbound,
@@ -29,6 +33,7 @@ export type BridgeHandlerDeps = {
   sessions: ActiveSessionTracker;
   connection: PairedConnection;
   onBatchChanged?: (agentId: string, sessionKey: string) => void;
+  sourceResolver?: SourceResolver;
 };
 
 export type BridgeHandleResult = BridgeOkResponse | ErrorEnvelope;
@@ -45,12 +50,25 @@ function errorEnvelope(
   return err;
 }
 
+function withSourceFreshness(
+  result: BridgeHandleResult,
+  source: SourceContext | undefined,
+): BridgeHandleResult {
+  if (!result.ok || source === undefined) {
+    return result;
+  }
+  return {
+    ...result,
+    sourceFreshness: source.freshness,
+  };
+}
+
 export class BridgeMessageHandler {
   private readonly recent = new Map<string, BridgeHandleResult>();
 
   constructor(private readonly deps: BridgeHandlerDeps) {}
 
-  handleRaw(raw: unknown): BridgeHandleResult {
+  async handleRaw(raw: unknown): Promise<BridgeHandleResult> {
     const parsed = parseInbound(raw);
     if (!parsed.ok) {
       return parsed.error;
@@ -58,7 +76,7 @@ export class BridgeMessageHandler {
     return this.handle(parsed.message);
   }
 
-  handle(message: InboundBridgeMessage): BridgeHandleResult {
+  async handle(message: InboundBridgeMessage): Promise<BridgeHandleResult> {
     const requestId = "requestId" in message ? message.requestId : undefined;
     if (requestId !== undefined) {
       const cached = this.recent.get(requestId);
@@ -73,13 +91,13 @@ export class BridgeMessageHandler {
         result = this.hello(message.requestId);
         break;
       case "selection.create":
-        result = this.create(message);
+        result = await this.create(message);
         break;
       case "selection.remove":
         result = this.remove(message);
         break;
       case "selection.update":
-        result = this.update(message);
+        result = await this.update(message);
         break;
       case "artifact.upload":
         result = errorEnvelope(
@@ -111,7 +129,34 @@ export class BridgeMessageHandler {
     };
   }
 
-  private create(message: Extract<InboundBridgeMessage, { type: "selection.create" }>): BridgeHandleResult {
+  private async resolveSource(input: {
+    dataDs?: string;
+    pageUrl: string;
+    previousFileHash?: string;
+  }): Promise<SourceContext | undefined> {
+    const resolver = this.deps.sourceResolver;
+    if (!resolver) {
+      if (input.dataDs === undefined) {
+        return undefined;
+      }
+      return {
+        resolver: "none",
+        freshness: "unavailable",
+        dataDs: input.dataDs,
+      };
+    }
+    return resolver.resolve({
+      pageUrl: input.pageUrl,
+      ...(input.dataDs !== undefined ? { dataDs: input.dataDs } : {}),
+      ...(input.previousFileHash !== undefined
+        ? { previousFileHash: input.previousFileHash }
+        : {}),
+    });
+  }
+
+  private async create(
+    message: Extract<InboundBridgeMessage, { type: "selection.create" }>,
+  ): Promise<BridgeHandleResult> {
     const target = this.deps.sessions.requireExact();
     if (!target.ok) {
       return errorEnvelope(target.code, target.message, message.requestId);
@@ -137,23 +182,27 @@ export class BridgeMessageHandler {
     if (message.domSnapshot !== undefined) {
       draft.domSnapshot = message.domSnapshot;
     }
-    if (message.element.dataDs !== undefined) {
-      draft.source = {
-        resolver: "none",
-        freshness: "unmapped",
-        dataDs: message.element.dataDs,
-      };
+
+    const source = await this.resolveSource({
+      pageUrl: message.page.url,
+      ...(message.element.dataDs !== undefined ? { dataDs: message.element.dataDs } : {}),
+    });
+    if (source !== undefined) {
+      draft.source = source;
     }
 
     try {
       const attached = this.deps.store.attach(target.agentId, target.sessionKey, draft);
       this.deps.onBatchChanged?.(target.agentId, target.sessionKey);
-      return {
-        ok: true,
-        requestId: message.requestId,
-        selectionId: attached.selection.id,
-        deduped: attached.deduped,
-      };
+      return withSourceFreshness(
+        {
+          ok: true,
+          requestId: message.requestId,
+          selectionId: attached.selection.id,
+          deduped: attached.deduped,
+        },
+        attached.selection.source,
+      );
     } catch (error) {
       return this.mapStoreError(error, message.requestId);
     }
@@ -189,7 +238,9 @@ export class BridgeMessageHandler {
     }
   }
 
-  private update(message: Extract<InboundBridgeMessage, { type: "selection.update" }>): BridgeHandleResult {
+  private async update(
+    message: Extract<InboundBridgeMessage, { type: "selection.update" }>,
+  ): Promise<BridgeHandleResult> {
     const target = this.deps.sessions.requireExact();
     if (!target.ok) {
       return errorEnvelope(target.code, target.message, message.requestId);
@@ -224,19 +275,21 @@ export class BridgeMessageHandler {
     if (existing.domSnapshot !== undefined) {
       draft.domSnapshot = existing.domSnapshot;
     }
-    if (existing.source !== undefined) {
+
+    const dataDs = message.element?.dataDs ?? existing.source?.dataDs;
+    const shouldRefresh =
+      message.element?.dataDs !== undefined || existing.source?.dataDs !== undefined;
+    if (shouldRefresh) {
+      // Re-resolve on update so HMR/DOM-replace can refresh or mark stale (EDGE-006).
+      const source = await this.resolveSource({
+        pageUrl: existing.pageUrl,
+        ...(dataDs !== undefined ? { dataDs } : {}),
+      });
+      if (source !== undefined) {
+        draft.source = source;
+      }
+    } else if (existing.source !== undefined) {
       draft.source = existing.source;
-    }
-    if (message.element?.dataDs !== undefined) {
-      draft.source = {
-        resolver: existing.source?.resolver ?? "none",
-        freshness: existing.source?.freshness ?? "unmapped",
-        dataDs: message.element.dataDs,
-        ...(existing.source?.file !== undefined ? { file: existing.source.file } : {}),
-        ...(existing.source?.line !== undefined ? { line: existing.source.line } : {}),
-        ...(existing.source?.column !== undefined ? { column: existing.source.column } : {}),
-        ...(existing.source?.component !== undefined ? { component: existing.source.component } : {}),
-      };
     }
 
     const changes: VisualChange[] = [...existing.changes];
@@ -250,8 +303,6 @@ export class BridgeMessageHandler {
     }
     draft.changes = changes;
 
-    // Replace by remove+attach while preserving selection id via dedup identity when possible.
-    // Prefer explicit id retention through store helper.
     try {
       const updated = this.deps.store.replaceSelection(
         target.agentId,
@@ -264,12 +315,15 @@ export class BridgeMessageHandler {
       }
       this.deps.onBatchChanged?.(target.agentId, target.sessionKey);
       void toBatchDto(updated.batch);
-      return {
-        ok: true,
-        requestId: message.requestId,
-        selectionId: updated.selection.id,
-        revision: message.revision ?? 0,
-      };
+      return withSourceFreshness(
+        {
+          ok: true,
+          requestId: message.requestId,
+          selectionId: updated.selection.id,
+          revision: message.revision ?? 0,
+        },
+        updated.selection.source,
+      );
     } catch (error) {
       return this.mapStoreError(error, message.requestId);
     }
