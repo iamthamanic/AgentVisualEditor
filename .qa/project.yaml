@@ -13,10 +13,13 @@ testGate:
     - npm run typecheck
     - npm run build
     - npm test
+    - npm run check:boundary
+    - npm run check:licenses
     - cd packages/openclaw-plugin && npm run build && npm run validate
 compositionGate:
   enabled: true
-  notes: Prefer mountDefault composer composition; chip region above built-in
+  notes: Prefer mountDefault composer composition; chip region above built-in;
+    SLC-7 boundary is static (core/protocol host-free for future MCP)
 pipeline:
   - implement
   - verify-ticket
