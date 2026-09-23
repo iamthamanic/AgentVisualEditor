@@ -1,5 +1,5 @@
 # Composition Gate — slc-4-domscribe-adapter
-- HEAD_SHA: WORKTREE
+- HEAD_SHA: 1636ce79722d9b6f6b70c74346f47bc09584bfb3
 - Date: 2026-09-23
 - Verdict: CLEAR
 ## Event
