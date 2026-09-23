@@ -73,12 +73,16 @@ describe("T-005 session targeting + canonical send", () => {
     let sendCalls = 0;
     const send = async (): Promise<boolean> => {
       sendCalls += 1;
-      store.beginPrepare("agent-1", "session-a");
-      if (sendCalls === 1) {
-        store.completeSend("agent-1", "session-a", false);
+      const prepared = store.prepareSend("agent-1", "session-a");
+      assert.equal(prepared.ok, true);
+      if (!prepared.ok) {
         return false;
       }
-      store.completeSend("agent-1", "session-a", true);
+      if (sendCalls === 1) {
+        store.completeSend("agent-1", "session-a", prepared.preparationId, false);
+        return false;
+      }
+      store.completeSend("agent-1", "session-a", prepared.preparationId, true);
       return true;
     };
 
@@ -94,11 +98,12 @@ describe("T-005 session targeting + canonical send", () => {
 
     const admitted = await send();
     assert.equal(admitted, true);
-    assert.equal(store.snapshot("agent-1", "session-a").state, "sent");
+    assert.equal(store.snapshot("agent-1", "session-a").state, "draft");
+    assert.equal(store.snapshot("agent-1", "session-a").selections.length, 0);
+    assert.equal(store.getAdmitted("agent-1", "session-a")?.state, "sent");
     assert.equal(sendCalls, 2);
 
     const dto = toBatchDto(store.snapshot("agent-1", "session-a"));
-    assert.equal(dto.selectionCount, 1);
-    assert.ok(dto.selections[0]?.label.includes("button"));
+    assert.equal(dto.selectionCount, 0);
   });
 });

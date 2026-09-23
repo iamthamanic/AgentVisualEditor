@@ -1,7 +1,7 @@
 {
   "id": "agent-visual-editor",
   "name": "Agent Visual Editor",
-  "description": "Native composer chips, pairing, and extension bridge for AgentVisualEditor.",
+  "description": "Native composer chips, pairing, extension bridge, send context, and agent tools for AgentVisualEditor.",
   "version": "0.1.0",
   "configSchema": {
     "type": "object",
@@ -23,12 +23,21 @@
     "onStartup": true
   },
   "controlUi": {
-    "entry": "dist/control-ui/7d2a76cb5b3b3ee9298eb469a19818220ddba5910cef0625d418e3d90ce92e21/index.js",
+    "entry": "dist/control-ui/35fa7cba5252f0f9d739fb2a6d1e71c9beb4e9964ddc5feddf91fb55819ea6b2/index.js",
     "styles": [
-      "dist/control-ui/7d2a76cb5b3b3ee9298eb469a19818220ddba5910cef0625d418e3d90ce92e21/index.css"
+      "dist/control-ui/35fa7cba5252f0f9d739fb2a6d1e71c9beb4e9964ddc5feddf91fb55819ea6b2/index.css"
     ]
   },
   "contracts": {
-    "tools": []
+    "tools": [
+      "agent_visual_editor.get_active_context",
+      "agent_visual_editor.get_screenshot",
+      "agent_visual_editor.get_selection"
+    ]
+  },
+  "toolMetadata": {
+    "agent_visual_editor.get_screenshot": {
+      "optional": true
+    }
   }
 }

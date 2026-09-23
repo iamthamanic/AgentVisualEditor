@@ -57,9 +57,13 @@ export type VisualBatch = {
   sessionKey: string;
   agentId: string;
   state: VisualBatchState;
+  /** Monotonic revision; prepareSend pins one preparation per revision (C-010). */
+  revision: number;
   createdAt: string;
   updatedAt: string;
   admittedAt?: string;
+  /** Set while state === preparing; cleared on admit/reject. */
+  preparationId?: string;
   selections: VisualSelection[];
 };
 

@@ -24,6 +24,16 @@ export type BatchDto = {
 };
 
 export function toBatchDto(batch: VisualBatch): BatchDto {
+  // After admitted send the working batch is an empty draft (SCN-021 chips clear).
+  // Preparing still shows chips so the user sees retained state on reject.
+  if (batch.state === "sent" || batch.state === "cleared" || batch.state === "expired") {
+    return {
+      batchId: batch.id,
+      state: batch.state,
+      selectionCount: 0,
+      selections: [],
+    };
+  }
   return {
     batchId: batch.id,
     state: batch.state,

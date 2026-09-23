@@ -23,6 +23,10 @@ export function createBatchId(): string {
   return `ave_batch_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
+export function createPreparationId(): string {
+  return `ave_prep_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
 export function createVisualBatch(sessionKey: string, agentId: string): VisualBatch {
   const now = new Date().toISOString();
   return {
@@ -30,6 +34,7 @@ export function createVisualBatch(sessionKey: string, agentId: string): VisualBa
     sessionKey,
     agentId,
     state: "draft",
+    revision: 0,
     createdAt: now,
     updatedAt: now,
     selections: [],
@@ -39,6 +44,7 @@ export function createVisualBatch(sessionKey: string, agentId: string): VisualBa
 function touch(batch: VisualBatch): VisualBatch {
   return {
     ...batch,
+    revision: batch.revision + 1,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -136,21 +142,34 @@ export function clearVisualBatch(batch: VisualBatch): VisualBatch {
   throw new InvalidBatchStateError(batch.state, "cleared");
 }
 
-/** Move draft → preparing for an explicit user Send. */
+/**
+ * Move draft → preparing for an explicit user Send (C-010).
+ * Pins one preparationId to the current batch revision.
+ * Caller must ensure selections.length > 0 (unavailable_context otherwise).
+ */
 export function prepareSend(batch: VisualBatch): VisualBatch {
-  return transitionBatch(batch, "preparing");
+  const next = transitionBatch(batch, "preparing");
+  return {
+    ...next,
+    preparationId: createPreparationId(),
+  };
 }
 
-/** Admit a prepared batch as sent. */
+/** Admit a prepared batch as sent; clears preparationId. */
 export function admitSend(batch: VisualBatch): VisualBatch {
-  return transitionBatch(batch, "sent");
+  const next = transitionBatch(batch, "sent");
+  const { preparationId: _cleared, ...rest } = next;
+  return rest;
 }
 
 /**
  * Reject a preparing send: return to draft keeping chips (SCN-014).
+ * Clears preparationId so a later turn cannot consume this preparation (RISK-004).
  */
 export function rejectSend(batch: VisualBatch): VisualBatch {
-  return transitionBatch(batch, "draft");
+  const next = transitionBatch(batch, "draft");
+  const { preparationId: _cleared, ...rest } = next;
+  return rest;
 }
 
 export function expireBatch(batch: VisualBatch): VisualBatch {
