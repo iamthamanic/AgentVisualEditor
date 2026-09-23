@@ -79,4 +79,4 @@ Chrome MV3 extension with Cursor-like Inspect Mode pairs securely to the OpenCla
 
 ## Composition Gate
 
-See `.qa/runs/composition-gate-slc-2-extension-inspect-bridge.md` — Verdict CLEAR (WORKTREE; stamp on commit).
+See `.qa/runs/composition-gate-slc-2-extension-inspect-bridge.md` — Verdict CLEAR (de4d64f1616896a9e9e25f46acd654f62906a8c6).
