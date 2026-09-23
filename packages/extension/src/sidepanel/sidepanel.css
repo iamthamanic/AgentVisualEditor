@@ -144,3 +144,81 @@ body {
   color: var(--ave-ink);
   border-color: var(--ave-line);
 }
+
+.ave-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 4px;
+  border-bottom: 1px solid var(--ave-line);
+  padding-bottom: 8px;
+}
+
+.ave-tab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ave-muted);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ave-tab[aria-selected="true"] {
+  color: var(--ave-ink);
+  border-color: var(--ave-line);
+  background: #fff;
+}
+
+.ave-panel {
+  border-top: 1px solid var(--ave-line);
+  padding: 14px 0;
+}
+
+.ave-banner {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: rgba(154, 52, 18, 0.08);
+  color: var(--ave-warn);
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+
+.ave-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.ave-fieldset:disabled {
+  opacity: 0.55;
+}
+
+.ave-change-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ave-change-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ave-line);
+  font-size: 0.8rem;
+}
+
+.ave-change-item button {
+  border: 1px solid var(--ave-line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+

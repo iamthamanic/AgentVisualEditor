@@ -19,6 +19,7 @@ export type BridgeClientCallbacks = {
   onSelectionResult: (result: {
     ok: boolean;
     selectionId?: string;
+    artifactId?: string;
     message?: string;
     sourceFreshness?: string;
   }) => void;
@@ -135,6 +136,81 @@ export class BridgeClient {
     );
   }
 
+  sendSelectionUpdate(input: {
+    selectionId: string;
+    requestId: string;
+    change: {
+      id: string;
+      kind: "style" | "text" | "attribute" | "comment" | "other";
+      property?: string;
+      path?: string;
+      oldValue?: string;
+      newValue?: string;
+      status: "pending" | "in_progress" | "resolved" | "reverted";
+    };
+    revision?: number;
+  }): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      this.callbacks.onError("Bridge nicht verbunden");
+      return;
+    }
+    const change: Record<string, unknown> = {
+      id: input.change.id,
+      kind: input.change.kind,
+      status: input.change.status,
+    };
+    if (input.change.property !== undefined) change.property = input.change.property;
+    if (input.change.path !== undefined) change.path = input.change.path;
+    if (input.change.oldValue !== undefined) change.oldValue = input.change.oldValue;
+    if (input.change.newValue !== undefined) change.newValue = input.change.newValue;
+    const msg: Record<string, unknown> = {
+      type: "selection.update",
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: input.requestId,
+      selectionId: input.selectionId,
+      change,
+    };
+    if (input.revision !== undefined) {
+      msg.revision = input.revision;
+    }
+    this.socket.send(JSON.stringify(msg));
+  }
+
+  sendArtifactUpload(input: {
+    requestId: string;
+    selectionId: string;
+    mime: "image/png";
+    width: number;
+    height: number;
+    byteSize: number;
+    pngBase64: string;
+    contentHash?: string;
+    kind?: "viewport" | "element";
+    pageUrl?: string;
+    capturedAt?: string;
+  }): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      this.callbacks.onError("Bridge nicht verbunden");
+      return;
+    }
+    const msg: Record<string, unknown> = {
+      type: "artifact.upload",
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: input.requestId,
+      selectionId: input.selectionId,
+      mime: input.mime,
+      width: input.width,
+      height: input.height,
+      byteSize: input.byteSize,
+      pngBase64: input.pngBase64,
+    };
+    if (input.contentHash !== undefined) msg.contentHash = input.contentHash;
+    if (input.kind !== undefined) msg.kind = input.kind;
+    if (input.pageUrl !== undefined) msg.pageUrl = input.pageUrl;
+    if (input.capturedAt !== undefined) msg.capturedAt = input.capturedAt;
+    this.socket.send(JSON.stringify(msg));
+  }
+
   private connect(): void {
     if (this.stopped) return;
     try {
@@ -231,6 +307,7 @@ export class BridgeClient {
       this.callbacks.onSelectionResult({
         ok: true,
         selectionId: msg.selectionId,
+        ...(typeof msg.artifactId === "string" ? { artifactId: msg.artifactId } : {}),
         ...(typeof msg.sourceFreshness === "string"
           ? { sourceFreshness: msg.sourceFreshness }
           : {}),

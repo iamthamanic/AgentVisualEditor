@@ -304,6 +304,7 @@ export const SelectionUpdateMessageSchema = Type.Object(
             Type.Literal("style"),
             Type.Literal("text"),
             Type.Literal("attribute"),
+            Type.Literal("comment"),
             Type.Literal("other"),
           ]),
           property: Type.Optional(Type.String({ maxLength: 256 })),
@@ -333,7 +334,7 @@ export type SelectionUpdateMessage = {
   element?: SelectionCreateMessage["element"];
   change?: {
     id: string;
-    kind: "style" | "text" | "attribute" | "other";
+    kind: "style" | "text" | "attribute" | "comment" | "other";
     property?: string;
     path?: string;
     oldValue?: string;
@@ -342,7 +343,7 @@ export type SelectionUpdateMessage = {
   };
 };
 
-/** C-009 artifact.upload metadata (PNG body travels separately) */
+/** C-009 artifact.upload — PNG body as pngBase64 (v1 JSON transport). */
 export const ArtifactUploadMessageSchema = Type.Object(
   {
     type: Type.Literal("artifact.upload"),
@@ -352,8 +353,15 @@ export const ArtifactUploadMessageSchema = Type.Object(
     mime: Type.Literal("image/png"),
     width: Type.Integer({ minimum: 1, maximum: 8192 }),
     height: Type.Integer({ minimum: 1, maximum: 8192 }),
-    byteSize: Type.Integer({ minimum: 1, maximum: 2 * 1024 * 1024 }),
+    byteSize: Type.Integer({ minimum: 1, maximum: 3 * 1024 * 1024 }),
     contentHash: Type.Optional(Type.String({ maxLength: 128 })),
+    kind: Type.Optional(
+      Type.Union([Type.Literal("viewport"), Type.Literal("element")]),
+    ),
+    pageUrl: Type.Optional(Type.String({ maxLength: 4096 })),
+    capturedAt: Type.Optional(Type.String({ maxLength: 64 })),
+    /** Base64-encoded PNG bytes (no data-URL prefix). */
+    pngBase64: Type.String({ minLength: 1, maxLength: 4_000_000 }),
   },
   { additionalProperties: false },
 );
@@ -368,6 +376,10 @@ export type ArtifactUploadMessage = {
   height: number;
   byteSize: number;
   contentHash?: string;
+  kind?: "viewport" | "element";
+  pageUrl?: string;
+  capturedAt?: string;
+  pngBase64: string;
 };
 
 export const InboundBridgeMessageSchema = Type.Union([
@@ -400,4 +412,18 @@ export type SelectionResultOk = {
   sourceFreshness?: "fresh" | "stale" | "unmapped" | "unavailable";
 };
 
-export type BridgeOkResponse = SelectionResultOk | BridgeHelloAck;
+export type ArtifactUploadResultOk = {
+  ok: true;
+  requestId: string;
+  selectionId: string;
+  artifactId: string;
+  deduped?: boolean;
+  capturedAt: string;
+  expiresAt: string;
+  byteSize: number;
+  width: number;
+  height: number;
+  kind: "viewport" | "element";
+};
+
+export type BridgeOkResponse = SelectionResultOk | BridgeHelloAck | ArtifactUploadResultOk;

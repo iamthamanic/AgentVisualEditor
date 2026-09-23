@@ -2,13 +2,15 @@
  * Content-script Inspect Mode: hover highlight + click capture (FR-004).
  * Location: packages/extension/src/content/inspect.ts
  *
- * Overlay only — does not mutate page styles/content of target elements.
+ * Overlay only for inspect — preview mutations go through preview.ts (INV-1).
  */
 
 import {
   captureSelectionFromElement,
   isCrossOriginIframe,
 } from "./capture.js";
+import { handlePreviewMessage, type PreviewMessage } from "./preview.js";
+import { shouldIgnoreInspectShortcut } from "../editor/keyboard.js";
 import type { BackgroundToContent, ContentToBackground } from "../shared/types.js";
 
 const OVERLAY_ID = "ave-inspect-overlay";
@@ -114,6 +116,10 @@ function onClick(event: MouseEvent): void {
 
 function onKeyDown(event: KeyboardEvent): void {
   if (!inspectEnabled) return;
+  // EDGE-017 / T-023: do not tear down inspect while typing in inputs.
+  if (shouldIgnoreInspectShortcut(event)) {
+    return;
+  }
   if (event.key === "Escape") {
     setInspect(false);
     post({
@@ -141,8 +147,37 @@ function setInspect(enabled: boolean): void {
   }
 }
 
-chrome.runtime.onMessage.addListener((message: BackgroundToContent) => {
-  if (message.type === "inspect_set") {
-    setInspect(message.enabled);
+function isPreviewMessage(message: unknown): message is PreviewMessage {
+  if (!isRecord(message)) {
+    return false;
   }
-});
+  const type = message.type;
+  return (
+    type === "preview_apply_style" ||
+    type === "preview_apply_text" ||
+    type === "preview_revert_style" ||
+    type === "preview_revert_text" ||
+    type === "preview_clear_all"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+chrome.runtime.onMessage.addListener(
+  (message: BackgroundToContent | PreviewMessage, _sender, sendResponse) => {
+    if (message.type === "inspect_set") {
+      setInspect(message.enabled);
+      sendResponse({ ok: true });
+      return true;
+    }
+    if (isPreviewMessage(message)) {
+      sendResponse(handlePreviewMessage(message));
+      return true;
+    }
+    return false;
+  },
+);
+
+void lastTarget;

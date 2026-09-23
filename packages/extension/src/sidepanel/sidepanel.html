@@ -9,7 +9,7 @@
   <body>
     <header class="ave-header">
       <h1>AgentVisualEditor</h1>
-      <p class="ave-subtitle">Inspect &amp; Bridge</p>
+      <p class="ave-subtitle">Inspect · Design · Screenshots</p>
     </header>
 
     <section class="ave-status-card" aria-live="polite">
@@ -27,7 +27,15 @@
       </div>
     </section>
 
-    <section class="ave-inspect">
+    <nav class="ave-tabs" role="tablist" aria-label="Seitenbereiche">
+      <button type="button" class="ave-tab" role="tab" id="tab-inspect" aria-selected="true" data-tab="inspect">Inspect</button>
+      <button type="button" class="ave-tab" role="tab" id="tab-design" aria-selected="false" data-tab="design">Design</button>
+      <button type="button" class="ave-tab" role="tab" id="tab-changes" aria-selected="false" data-tab="changes">Changes</button>
+      <button type="button" class="ave-tab" role="tab" id="tab-shots" aria-selected="false" data-tab="shots">Screenshots</button>
+      <button type="button" class="ave-tab" role="tab" id="tab-conn" aria-selected="false" data-tab="conn">Verbindung</button>
+    </nav>
+
+    <section id="panel-inspect" class="ave-panel" role="tabpanel" data-panel="inspect">
       <div class="ave-row ave-row-toggle">
         <span class="ave-label">Inspect Mode</span>
         <button id="inspectToggle" type="button" class="ave-toggle" aria-pressed="false">AUS</button>
@@ -36,7 +44,64 @@
       <p id="error" class="ave-error" hidden></p>
     </section>
 
-    <section class="ave-connection">
+    <section id="panel-design" class="ave-panel" role="tabpanel" data-panel="design" hidden>
+      <p class="ave-banner" role="status">Vorschau — nicht committed (Browser-only)</p>
+      <p id="designSelection" class="ave-hint">Zuerst ein Element auswählen</p>
+      <fieldset id="designFields" class="ave-fieldset" disabled>
+        <label class="ave-field">
+          Padding
+          <input id="stylePadding" type="text" placeholder="z. B. 8px" autocomplete="off" />
+        </label>
+        <label class="ave-field">
+          Border-Radius
+          <input id="styleRadius" type="text" placeholder="z. B. 12px" autocomplete="off" />
+        </label>
+        <label class="ave-field">
+          Hintergrund
+          <input id="styleBg" type="text" placeholder="z. B. #0b6e4f" autocomplete="off" />
+        </label>
+        <label class="ave-field">
+          Farbe
+          <input id="styleColor" type="text" placeholder="z. B. #fff" autocomplete="off" />
+        </label>
+        <label class="ave-field">
+          Schriftgröße
+          <input id="styleFontSize" type="text" placeholder="z. B. 16px" autocomplete="off" />
+        </label>
+        <label class="ave-field">
+          Text-Inhalt
+          <input id="styleText" type="text" placeholder="Vorschau-Text" autocomplete="off" />
+        </label>
+        <label class="ave-field">
+          Kommentar am Element
+          <input id="styleComment" type="text" placeholder="Hinweis für den Agenten" autocomplete="off" />
+        </label>
+        <div class="ave-actions">
+          <button id="applyDesignBtn" type="button">Vorschau anwenden</button>
+          <button id="undoBtn" type="button" class="ave-secondary">Undo</button>
+          <button id="redoBtn" type="button" class="ave-secondary">Redo</button>
+        </div>
+      </fieldset>
+    </section>
+
+    <section id="panel-changes" class="ave-panel" role="tabpanel" data-panel="changes" hidden>
+      <div class="ave-actions" style="margin-bottom: 10px">
+        <button id="clearAllBtn" type="button" class="ave-secondary">Alle zurücksetzen</button>
+      </div>
+      <ul id="changeList" class="ave-change-list"></ul>
+      <p id="changesEmpty" class="ave-hint">Keine Preview-Änderungen</p>
+    </section>
+
+    <section id="panel-shots" class="ave-panel" role="tabpanel" data-panel="shots" hidden>
+      <p class="ave-hint">Screenshots ≤ 2 MiB, referenziert per selectionId (TTL).</p>
+      <div class="ave-actions">
+        <button id="shotViewportBtn" type="button">Viewport</button>
+        <button id="shotElementBtn" type="button" class="ave-secondary">Element</button>
+      </div>
+      <p id="shotHint" class="ave-hint"></p>
+    </section>
+
+    <section id="panel-conn" class="ave-panel" role="tabpanel" data-panel="conn" hidden>
       <h2>Verbindung</h2>
       <label class="ave-field">
         Gateway-URL

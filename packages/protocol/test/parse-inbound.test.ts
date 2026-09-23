@@ -76,6 +76,8 @@ describe("protocol parseInbound", () => {
       width: 100,
       height: 80,
       byteSize: 1024,
+      pngBase64: "iVBORw0KGgo=",
+      kind: "viewport",
     });
     assert.equal(result.ok, true);
   });

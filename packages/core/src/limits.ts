@@ -9,6 +9,12 @@ export const RUNTIME_SUMMARY_MAX_BYTES = 64 * 1024;
 export const TEXT_SUMMARY_MAX_BYTES = 2 * 1024;
 export const SELECTOR_MAX_BYTES = 8 * 1024;
 export const MAX_CHIPS_PER_DRAFT = 10;
+/** Screenshot PNG hard cap (NFR-006 / FR-018). */
+export const SCREENSHOT_MAX_BYTES = 2 * 1024 * 1024;
+/** Default artifact TTL (~2h, A-004). */
+export const ARTIFACT_TTL_MS = 2 * 60 * 60 * 1000;
+/** Max length for a single VisualChange newValue/oldValue (comment/text). */
+export const CHANGE_VALUE_MAX_BYTES = 4 * 1024;
 
 export function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;

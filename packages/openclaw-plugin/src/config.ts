@@ -1,5 +1,5 @@
 /**
- * Plugin config flags (composer UI, debug selection, Domscribe).
+ * Plugin config flags (composer UI, debug selection, Domscribe, preview editing).
  * Location: packages/openclaw-plugin/src/config.ts
  */
 
@@ -10,6 +10,8 @@ export type AvePluginConfig = {
   domscribeEnabled: boolean;
   /** Optional Domscribe relay base URL (e.g. http://127.0.0.1:PORT). */
   domscribeRelayUrl: string | null;
+  /** Design-tab / C-009 / VisualChange updates (SLC-5). */
+  previewEditingEnabled: boolean;
 };
 
 export const DEFAULT_AVE_CONFIG: AvePluginConfig = {
@@ -17,6 +19,7 @@ export const DEFAULT_AVE_CONFIG: AvePluginConfig = {
   testSelectionEnabled: false,
   domscribeEnabled: true,
   domscribeRelayUrl: null,
+  previewEditingEnabled: true,
 };
 
 export function readAveConfig(raw: Record<string, unknown> | undefined): AvePluginConfig {
@@ -24,6 +27,7 @@ export function readAveConfig(raw: Record<string, unknown> | undefined): AvePlug
   const testSelectionEnabled = raw?.testSelectionEnabled;
   const domscribeEnabled = raw?.domscribeEnabled;
   const domscribeRelayUrl = raw?.domscribeRelayUrl;
+  const previewEditingEnabled = raw?.previewEditingEnabled;
   return {
     composerUiEnabled: typeof composerUiEnabled === "boolean" ? composerUiEnabled : DEFAULT_AVE_CONFIG.composerUiEnabled,
     testSelectionEnabled:
@@ -33,5 +37,9 @@ export function readAveConfig(raw: Record<string, unknown> | undefined): AvePlug
       typeof domscribeRelayUrl === "string" && domscribeRelayUrl.trim().length > 0
         ? domscribeRelayUrl.trim()
         : null,
+    previewEditingEnabled:
+      typeof previewEditingEnabled === "boolean"
+        ? previewEditingEnabled
+        : DEFAULT_AVE_CONFIG.previewEditingEnabled,
   };
 }

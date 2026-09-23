@@ -1,11 +1,12 @@
 /**
- * AgentVisualEditor OpenClaw feature plugin entry (SLC-1..SLC-4).
+ * AgentVisualEditor OpenClaw feature plugin entry (SLC-1..SLC-5).
  * Location: packages/openclaw-plugin/src/index.ts
  *
  * INV-1: chip ops never send. INV-3: session binding fail-closed.
  * INV-4: plugin-scoped pairing only.
  * SLC-3: prepare_send/send_outcome + next-turn injection + agent tools.
  * SLC-4: Domscribe SourceResolver on selection path (degraded when absent).
+ * SLC-5: preview VisualChange + artifact.upload / get_screenshot.
  */
 
 import { defineFeaturePlugin, type FeatureInvocationContext } from "openclaw/plugin-sdk/feature-plugin";
@@ -23,6 +24,7 @@ import {
 } from "@agent-visual-editor/domscribe-adapter";
 import { PROTOCOL_VERSION } from "@agent-visual-editor/protocol";
 import { ActiveSessionTracker } from "./active-session.js";
+import { ArtifactStore } from "./artifact-store.js";
 import { registerBridgeRoutes, type BridgeHub } from "./bridge-routes.js";
 import { contract } from "./contract.js";
 import { readAveConfig } from "./config.js";
@@ -133,6 +135,7 @@ const plugin = defineFeaturePlugin({
     const store = new VisualBatchStore();
     const pairing = new PairingStore();
     const sessions = new ActiveSessionTracker();
+    const artifacts = new ArtifactStore();
     const config = readAveConfig(api.pluginConfig);
     const sourceResolver = buildSourceResolver(config);
 
@@ -158,6 +161,8 @@ const plugin = defineFeaturePlugin({
       store,
       onBatchChanged: emitChanged,
       sourceResolver,
+      artifacts,
+      previewEditingEnabled: config.previewEditingEnabled,
     });
 
     sessions.subscribe((event) => {
@@ -180,11 +185,13 @@ const plugin = defineFeaturePlugin({
         }
         const batch = store.findBySessionKey(ctx.sessionKey);
         if (batch) {
+          artifacts.deleteSession(batch.agentId, batch.sessionKey);
           store.deleteSession(batch.agentId, batch.sessionKey);
           return;
         }
         const admitted = store.findAdmittedBySessionKey(ctx.sessionKey);
         if (admitted) {
+          artifacts.deleteSession(admitted.agentId, admitted.sessionKey);
           store.deleteSession(admitted.agentId, admitted.sessionKey);
         }
       },
@@ -412,22 +419,56 @@ const plugin = defineFeaturePlugin({
         };
       },
 
-      get_screenshot(_input, context) {
+      get_screenshot(input, context) {
         const binding = resolveToolBinding(context);
         if (!binding.ok) {
           return opError(binding.code, binding.message);
         }
-        // SLC-5 will deliver artifacts; fail closed until then (C-014 stub).
-        return opError(
-          "not_found",
-          "Kein Screenshot-Artifact verfügbar (noch nicht hochgeladen oder abgelaufen)",
-        );
+        const { agentId, sessionKey } = binding.identity;
+        let artifact =
+          input.artifactId !== undefined
+            ? artifacts.get(input.artifactId)
+            : undefined;
+        if (artifact) {
+          if (artifact.agentId !== agentId || artifact.sessionKey !== sessionKey) {
+            return opError("forbidden", "Cross-Session-Zugriff auf Artifact verweigert");
+          }
+        } else if (input.selectionId !== undefined) {
+          artifact = artifacts.getForSelection(input.selectionId, agentId, sessionKey);
+        } else {
+          return opError(
+            "not_found",
+            "Kein Screenshot-Artifact verfügbar (selectionId oder artifactId angeben)",
+          );
+        }
+        if (!artifact) {
+          return opError(
+            "not_found",
+            "Kein Screenshot-Artifact verfügbar (noch nicht hochgeladen oder abgelaufen)",
+          );
+        }
+        return {
+          ok: true as const,
+          artifactId: artifact.id,
+          selectionId: artifact.selectionId,
+          mimeType: artifact.mime,
+          width: artifact.width,
+          height: artifact.height,
+          byteSize: artifact.byteSize,
+          kind: artifact.kind,
+          pageUrl: artifact.pageUrl,
+          capturedAt: artifact.capturedAt,
+          expiresAt: artifact.expiresAt,
+          expired: false as const,
+          pngBase64: artifact.png.toString("base64"),
+        };
       },
 
       get_ui_flags() {
         return {
           composerUiEnabled: config.composerUiEnabled,
           testSelectionEnabled: config.testSelectionEnabled,
+          previewEditingEnabled: config.previewEditingEnabled,
         };
       },
 

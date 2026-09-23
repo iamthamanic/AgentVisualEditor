@@ -11,3 +11,4 @@ export * from "./identity.js";
 export * from "./selection.js";
 export * from "./batch.js";
 export * from "./compact-context.js";
+export * from "./visual-change.js";
