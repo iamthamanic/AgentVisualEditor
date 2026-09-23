@@ -1,0 +1,17 @@
+{
+  "name": "@agent-visual-editor/mcp-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generic MCP adapter placeholder (SLC-7)",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json"
+  }
+}

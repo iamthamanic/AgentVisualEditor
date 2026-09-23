@@ -1,0 +1,102 @@
+/* AgentVisualEditor composer chip region — uses host theme CSS variables. */
+.ave-composer-root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  color: var(--text);
+}
+
+.ave-chip-region {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.ave-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ave-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated, var(--panel, var(--bg)));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85em;
+}
+
+.ave-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28rem;
+}
+
+.ave-chip-remove {
+  border: 0;
+  background: transparent;
+  color: var(--muted, var(--text));
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.ave-chip-remove:hover,
+.ave-chip-remove:focus-visible {
+  color: var(--danger, var(--accent, var(--text)));
+}
+
+.ave-chip-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ave-chip-clear,
+.ave-chip-test {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.ave-chip-clear:hover,
+.ave-chip-test:hover {
+  background: var(--bg-elevated, var(--panel, transparent));
+}
+
+.ave-chip-status {
+  min-height: 1.2em;
+  font-size: 0.85em;
+  color: var(--muted, var(--text));
+}
+
+.ave-builtin-composer {
+  width: 100%;
+}
+
+.ave-health-page {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  color: var(--text);
+}
+
+.ave-health-hint {
+  color: var(--muted, var(--text));
+  max-width: 40rem;
+}

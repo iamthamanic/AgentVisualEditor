@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": false,
+    "declarationMap": false,
+    "composite": false,
+    "verbatimModuleSyntax": false
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}

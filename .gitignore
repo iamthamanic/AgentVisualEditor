@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+.qa/queue/
+runs/
+state.json
+packages/openclaw-plugin/dist/control-ui/
