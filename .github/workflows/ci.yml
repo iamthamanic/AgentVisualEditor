@@ -16,7 +16,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
-      - run: npm run validate --workspace=openclaw-plugin-agent-visual-editor
-        env:
-          # openclaw CLI available via plugin workspace dep after npm ci
-          PATH: ${{ github.workspace }}/node_modules/.bin:${{ env.PATH }}
+      - name: Validate OpenClaw plugin
+        working-directory: packages/openclaw-plugin
+        run: npm run validate
