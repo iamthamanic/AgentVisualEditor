@@ -8,6 +8,8 @@ dist/
 !.env.example
 coverage/
 .qa/queue/
-runs/
-state.json
+/runs/
+/state.json
+!.qa/runs/
+!.qa/runs/**
 packages/openclaw-plugin/dist/control-ui/

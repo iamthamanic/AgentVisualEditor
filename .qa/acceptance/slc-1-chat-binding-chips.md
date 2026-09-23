@@ -39,9 +39,9 @@ Cursor-artiger Visual Editor für OpenClaw — Fundament-Slice: beweist, dass Op
 - BR-010: `redactText` — T-001
 - F-03/B-01/B-04/B-07/B-08/B-09/P-04: N/A (no public HTTP auth surface in SLC-1; ops use Gateway session-action scopes)
 
-## Composition Gate
+## ## Composition Gate
 
-See `.qa/runs/composition-gate-slc-1-chat-binding-chips.md` — Verdict CLEAR (WORKTREE; refresh SHA after commit).
+See  — Verdict CLEAR (e9c550adba274c27740dce7fcf4984bbd7a8fc44).
 
 ## Implementation Notes
 
