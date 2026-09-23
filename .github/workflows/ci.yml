@@ -16,6 +16,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - run: npm run check:boundary
+      - run: npm run check:licenses
       - name: Validate OpenClaw plugin
         working-directory: packages/openclaw-plugin
         run: npm run validate
