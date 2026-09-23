@@ -1,9 +1,8 @@
 /**
- * Feature contract for SLC-1 ops (no agent tools).
+ * Feature contract for SLC-1/SLC-2 ops (no agent tools).
  * Location: packages/openclaw-plugin/src/contract.ts
  *
  * OpenClaw requires operation ids matching /^[a-z][a-z0-9._-]{0,127}$/
- * (snake_case aliases of getVisualBatch / attachTestSelection / …).
  */
 
 import { Type } from "typebox";
@@ -48,8 +47,24 @@ const OpErrorSchema = Type.Object(
       Type.Literal("limit_reached"),
       Type.Literal("payload_too_large"),
       Type.Literal("invalid_batch_state"),
+      Type.Literal("rate_limited"),
+      Type.Literal("invalid_code"),
+      Type.Literal("expired_code"),
+      Type.Literal("incompatible_protocol"),
+      Type.Literal("no_active_session"),
     ]),
     message: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
+const ConnectionRowSchema = Type.Object(
+  {
+    connectionId: Type.String(),
+    extensionInstanceId: Type.String(),
+    extensionLabel: Type.Union([Type.String(), Type.Null()]),
+    createdAtMs: Type.Integer({ minimum: 0 }),
+    revoked: Type.Boolean(),
   },
   { additionalProperties: false },
 );
@@ -126,6 +141,111 @@ export const contract = defineFeatureContract({
         {
           composerUiEnabled: Type.Boolean(),
           testSelectionEnabled: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    },
+    pairing_start: {
+      kind: "action",
+      description: "Generate a one-time extension pairing code (C-001).",
+      input: Type.Object(
+        {
+          label: Type.Optional(Type.String({ maxLength: 128 })),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            code: Type.String(),
+            expiresAt: Type.String(),
+            attemptId: Type.String(),
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
+    },
+    connection_revoke: {
+      kind: "action",
+      description: "Revoke a paired extension connection and terminate its bridge (C-003).",
+      input: Type.Object(
+        {
+          connectionId: Type.String({ minLength: 1, maxLength: 128 }),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            revoked: Type.Literal(true),
+            connectionId: Type.String(),
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
+    },
+    list_connections: {
+      kind: "query",
+      description: "List paired extension connections for the health page.",
+      input: Type.Object({}, { additionalProperties: false }),
+      output: Type.Object(
+        {
+          ok: Type.Literal(true),
+          connections: Type.Array(ConnectionRowSchema),
+        },
+        { additionalProperties: false },
+      ),
+    },
+    report_active_session: {
+      kind: "action",
+      description: "Report the exact active OpenClaw chat for extension targeting (C-005).",
+      input: Type.Object(
+        {
+          sessionKey: Type.Optional(Type.Union([Type.String({ maxLength: 512 }), Type.Null()])),
+          agentId: Type.Optional(Type.Union([Type.String({ maxLength: 256 }), Type.Null()])),
+          title: Type.Optional(Type.Union([Type.String({ maxLength: 512 }), Type.Null()])),
+          ambiguous: Type.Optional(Type.Boolean()),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Object(
+        {
+          ok: Type.Literal(true),
+          revision: Type.Integer({ minimum: 0 }),
+          status: Type.Union([
+            Type.Literal("active"),
+            Type.Literal("none"),
+            Type.Literal("ambiguous"),
+          ]),
+          sessionKey: Type.Union([Type.String(), Type.Null()]),
+          agentId: Type.Union([Type.String(), Type.Null()]),
+          title: Type.Union([Type.String(), Type.Null()]),
+        },
+        { additionalProperties: false },
+      ),
+    },
+    get_health: {
+      kind: "query",
+      description: "Setup/health snapshot for AVE Status page (FR-028).",
+      input: Type.Object({}, { additionalProperties: false }),
+      output: Type.Object(
+        {
+          ok: Type.Literal(true),
+          pluginInstalled: Type.Literal(true),
+          bridgePath: Type.String(),
+          pairedConnectionCount: Type.Integer({ minimum: 0 }),
+          activeSessionAvailable: Type.Boolean(),
+          activeSessionStatus: Type.Union([
+            Type.Literal("active"),
+            Type.Literal("none"),
+            Type.Literal("ambiguous"),
+          ]),
+          domscribeStatus: Type.Literal("unavailable"),
+          protocolVersion: Type.Integer(),
         },
         { additionalProperties: false },
       ),

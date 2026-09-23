@@ -1,9 +1,9 @@
 /**
- * AgentVisualEditor OpenClaw feature plugin entry (SLC-1).
+ * AgentVisualEditor OpenClaw feature plugin entry (SLC-1 + SLC-2 bridge).
  * Location: packages/openclaw-plugin/src/index.ts
  *
  * INV-1: chip ops never send. INV-3: session binding fail-closed.
- * No agent tools in SLC-1.
+ * INV-4: plugin-scoped pairing only. No agent tools in SLC-2.
  */
 
 import { defineFeaturePlugin, type FeatureInvocationContext } from "openclaw/plugin-sdk/feature-plugin";
@@ -14,8 +14,12 @@ import {
   PayloadTooLargeError,
   type SourceContext,
 } from "@agent-visual-editor/core";
+import { PROTOCOL_VERSION } from "@agent-visual-editor/protocol";
+import { ActiveSessionTracker } from "./active-session.js";
+import { registerBridgeRoutes, type BridgeHub } from "./bridge-routes.js";
 import { contract } from "./contract.js";
 import { readAveConfig } from "./config.js";
+import { BRIDGE_PATH, PairingStore } from "./pairing.js";
 import { toBatchDto, type BatchDto } from "./project-batch.js";
 import { bindSessionIdentity } from "./session-binding.js";
 import { VisualBatchStore } from "./store.js";
@@ -28,7 +32,12 @@ type OpErrorCode =
   | "not_found"
   | "limit_reached"
   | "payload_too_large"
-  | "invalid_batch_state";
+  | "invalid_batch_state"
+  | "rate_limited"
+  | "invalid_code"
+  | "expired_code"
+  | "incompatible_protocol"
+  | "no_active_session";
 
 type OpError = {
   ok: false;
@@ -91,10 +100,39 @@ function buildTestSource(input: {
 const plugin = defineFeaturePlugin({
   contract,
   name: "Agent Visual Editor",
-  description: "Native composer chips and session-bound visual context for AgentVisualEditor.",
+  description: "Native composer chips, pairing, and extension bridge for AgentVisualEditor.",
   setup(api, events) {
     const store = new VisualBatchStore();
+    const pairing = new PairingStore();
+    const sessions = new ActiveSessionTracker();
     const config = readAveConfig(api.pluginConfig);
+
+    let bridgeHub: BridgeHub | undefined;
+
+    const emitChanged = (agentId: string, sessionKey: string) => {
+      const batch = store.getOrCreate(agentId, sessionKey);
+      try {
+        events.emit("visual_batch_changed", {
+          sessionKey,
+          agentId,
+          batch: toBatchDto(batch),
+        });
+      } catch {
+        // Emitter unavailable until gateway service starts — safe for unit tests.
+      }
+    };
+
+    bridgeHub = registerBridgeRoutes({
+      api,
+      pairing,
+      sessions,
+      store,
+      onBatchChanged: emitChanged,
+    });
+
+    sessions.subscribe((event) => {
+      bridgeHub?.broadcastSession(event);
+    });
 
     api.session.state.registerSessionExtension({
       namespace: SESSION_EXT_NAMESPACE,
@@ -128,19 +166,6 @@ const plugin = defineFeaturePlugin({
         contextSessionKey: ctx.sessionKey,
         contextAgentId: ctx.agentId,
       });
-    }
-
-    function emitChanged(agentId: string, sessionKey: string) {
-      const batch = store.getOrCreate(agentId, sessionKey);
-      try {
-        events.emit("visual_batch_changed", {
-          sessionKey,
-          agentId,
-          batch: toBatchDto(batch),
-        });
-      } catch {
-        // Emitter unavailable until gateway service starts — safe for unit tests.
-      }
     }
 
     return {
@@ -222,6 +247,68 @@ const plugin = defineFeaturePlugin({
           testSelectionEnabled: config.testSelectionEnabled,
         };
       },
+
+      pairing_start(input) {
+        const result = pairing.start(input.label);
+        if (!result.ok) {
+          return opError(result.code, result.message);
+        }
+        return result;
+      },
+
+      connection_revoke(input) {
+        const result = pairing.revoke(input.connectionId);
+        if (!result.ok) {
+          return opError(result.code, result.message);
+        }
+        bridgeHub?.terminateConnection(input.connectionId);
+        return result;
+      },
+
+      list_connections() {
+        return {
+          ok: true as const,
+          connections: pairing.listConnections().map((c) => ({
+            connectionId: c.connectionId,
+            extensionInstanceId: c.extensionInstanceId,
+            extensionLabel: c.extensionLabel ?? null,
+            createdAtMs: c.createdAtMs,
+            revoked: c.revoked,
+          })),
+        };
+      },
+
+      report_active_session(input) {
+        const event = sessions.report({
+          sessionKey: input.sessionKey ?? null,
+          agentId: input.agentId ?? null,
+          title: input.title ?? null,
+          ambiguous: input.ambiguous,
+        });
+        return {
+          ok: true as const,
+          revision: event.revision,
+          status: event.status,
+          sessionKey: event.sessionKey,
+          agentId: event.agentId,
+          title: event.title ?? null,
+        };
+      },
+
+      get_health() {
+        const snap = sessions.get();
+        const active = pairing.listConnections().filter((c) => !c.revoked);
+        return {
+          ok: true as const,
+          pluginInstalled: true as const,
+          bridgePath: BRIDGE_PATH,
+          pairedConnectionCount: active.length,
+          activeSessionAvailable: sessions.hasExactSession(),
+          activeSessionStatus: snap.status,
+          domscribeStatus: "unavailable" as const,
+          protocolVersion: PROTOCOL_VERSION,
+        };
+      },
     };
   },
 });
@@ -280,3 +367,6 @@ export { bindSessionIdentity } from "./session-binding.js";
 export { toBatchDto } from "./project-batch.js";
 export { readAveConfig, DEFAULT_AVE_CONFIG } from "./config.js";
 export { contract } from "./contract.js";
+export { PairingStore, BRIDGE_PATH, PAIRING_COMPLETE_PATH } from "./pairing.js";
+export { ActiveSessionTracker } from "./active-session.js";
+export { BridgeMessageHandler } from "./bridge-handler.js";

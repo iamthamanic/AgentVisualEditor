@@ -12,4 +12,5 @@ coverage/
 /state.json
 !.qa/runs/
 !.qa/runs/**
-packages/openclaw-plugin/dist/control-ui/
+dist-ext/
+

@@ -1,7 +1,7 @@
 {
   "id": "agent-visual-editor",
   "name": "Agent Visual Editor",
-  "description": "Native composer chips and session-bound visual context for AgentVisualEditor.",
+  "description": "Native composer chips, pairing, and extension bridge for AgentVisualEditor.",
   "version": "0.1.0",
   "configSchema": {
     "type": "object",
@@ -23,9 +23,9 @@
     "onStartup": true
   },
   "controlUi": {
-    "entry": "dist/control-ui/0f75ec6d9d328b3f299366ce44ff9c43c69d9978ecabbd14d8c13284f10bba58/index.js",
+    "entry": "dist/control-ui/7d2a76cb5b3b3ee9298eb469a19818220ddba5910cef0625d418e3d90ce92e21/index.js",
     "styles": [
-      "dist/control-ui/0f75ec6d9d328b3f299366ce44ff9c43c69d9978ecabbd14d8c13284f10bba58/index.css"
+      "dist/control-ui/7d2a76cb5b3b3ee9298eb469a19818220ddba5910cef0625d418e3d90ce92e21/index.css"
     ]
   },
   "contracts": {

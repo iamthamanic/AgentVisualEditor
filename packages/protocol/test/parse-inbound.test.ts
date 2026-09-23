@@ -1,15 +1,34 @@
 /**
- * Protocol parseInbound coverage for C-006..C-009 schemas.
+ * Protocol parseInbound coverage for C-001..C-009 schemas.
  * Location: packages/protocol/test/parse-inbound.test.ts
  */
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { PROTOCOL_VERSION, parseInbound } from "../dist/index.js";
+import {
+  PROTOCOL_VERSION,
+  parseConnectionRevoke,
+  parseInbound,
+  parsePairingComplete,
+  parsePairingStart,
+} from "../dist/index.js";
 
 describe("protocol parseInbound", () => {
   it("exports PROTOCOL_VERSION = 1", () => {
     assert.equal(PROTOCOL_VERSION, 1);
+  });
+
+  it("accepts bridge.hello (C-004)", () => {
+    const result = parseInbound({
+      type: "bridge.hello",
+      protocolVersion: 1,
+      requestId: "req-hello",
+      extensionInstanceId: "ext-1",
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.message.type, "bridge.hello");
+    }
   });
 
   it("accepts selection.create (C-006)", () => {
@@ -68,5 +87,29 @@ describe("protocol parseInbound", () => {
       assert.equal(result.error.code, "invalid_message");
       assert.equal(result.error.ok, false);
     }
+  });
+
+  it("accepts pairing.start / complete / revoke request shapes", () => {
+    const start = parsePairingStart({
+      type: "pairing.start",
+      protocolVersion: 1,
+      label: "Chrome",
+    });
+    assert.equal(start.ok, true);
+
+    const complete = parsePairingComplete({
+      type: "pairing.complete",
+      protocolVersion: 1,
+      code: "ABC123",
+      extensionInstanceId: "ext-1",
+    });
+    assert.equal(complete.ok, true);
+
+    const revoke = parseConnectionRevoke({
+      type: "connection.revoke",
+      protocolVersion: 1,
+      connectionId: "conn-1",
+    });
+    assert.equal(revoke.ok, true);
   });
 });

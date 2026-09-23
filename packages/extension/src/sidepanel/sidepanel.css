@@ -1,0 +1,146 @@
+/* Side panel styles — German Inspect/Connection UI */
+:root {
+  --ave-bg: #f6f3ee;
+  --ave-ink: #1c1a17;
+  --ave-muted: #6b645c;
+  --ave-line: #d9d2c8;
+  --ave-accent: #0b6e4f;
+  --ave-warn: #9a3412;
+  --ave-ok: #0b6e4f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: var(--ave-ink);
+  background:
+    radial-gradient(circle at top left, rgba(11, 110, 79, 0.08), transparent 40%),
+    linear-gradient(180deg, #fbf8f3 0%, var(--ave-bg) 100%);
+  min-height: 100vh;
+}
+
+.ave-header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.ave-subtitle {
+  margin: 4px 0 16px;
+  color: var(--ave-muted);
+  font-size: 0.9rem;
+}
+
+.ave-status-card,
+.ave-inspect,
+.ave-connection {
+  border-top: 1px solid var(--ave-line);
+  padding: 14px 0;
+}
+
+.ave-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.ave-label {
+  color: var(--ave-muted);
+  font-size: 0.85rem;
+}
+
+.ave-value {
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+.ave-value[data-state="connected"] {
+  color: var(--ave-ok);
+}
+
+.ave-value[data-state="reconnecting"],
+.ave-value[data-state="connecting"] {
+  color: #a16207;
+}
+
+.ave-value[data-state="disconnected"],
+.ave-value[data-state="re_pair_required"] {
+  color: var(--ave-warn);
+}
+
+.ave-toggle {
+  border: 1px solid var(--ave-line);
+  background: #fff;
+  color: var(--ave-ink);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font: inherit;
+  cursor: pointer;
+  min-width: 64px;
+}
+
+.ave-toggle[aria-pressed="true"] {
+  background: var(--ave-accent);
+  border-color: var(--ave-accent);
+  color: #fff;
+}
+
+.ave-hint,
+.ave-error {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--ave-muted);
+}
+
+.ave-error {
+  color: var(--ave-warn);
+}
+
+.ave-connection h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.ave-field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 0.85rem;
+  color: var(--ave-muted);
+}
+
+.ave-field input {
+  border: 1px solid var(--ave-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--ave-ink);
+  background: #fff;
+}
+
+.ave-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ave-actions button {
+  border: 1px solid var(--ave-accent);
+  background: var(--ave-accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ave-actions .ave-secondary {
+  background: transparent;
+  color: var(--ave-ink);
+  border-color: var(--ave-line);
+}

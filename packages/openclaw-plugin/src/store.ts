@@ -7,6 +7,7 @@
 
 import {
   admitSend,
+  admitSelection,
   attachSelection,
   clearVisualBatch,
   createVisualBatch,
@@ -74,6 +75,33 @@ export class VisualBatchStore {
     const next = removeSelection(current, selectionId);
     this.batches.set(this.key(agentId, sessionKey), next);
     return next;
+  }
+
+  /**
+   * Replace an existing selection by id while preserving its id (C-008).
+   * Returns undefined when the selection is absent.
+   */
+  replaceSelection(
+    agentId: string,
+    sessionKey: string,
+    selectionId: string,
+    input: SelectionDraftInput,
+  ): StoreAttachResult | undefined {
+    const current = this.ensureDraft(agentId, sessionKey);
+    const index = current.selections.findIndex((s) => s.id === selectionId);
+    if (index < 0) {
+      return undefined;
+    }
+    const admitted = admitSelection(input, selectionId);
+    const selections = [...current.selections];
+    selections[index] = admitted;
+    const batch: VisualBatch = {
+      ...current,
+      selections,
+      updatedAt: new Date().toISOString(),
+    };
+    this.batches.set(this.key(agentId, sessionKey), batch);
+    return { batch, selection: admitted, deduped: true };
   }
 
   clear(agentId: string, sessionKey: string): VisualBatch {

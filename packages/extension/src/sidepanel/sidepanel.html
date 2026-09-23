@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Visual Editor</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="ave-header">
+      <h1>AgentVisualEditor</h1>
+      <p class="ave-subtitle">Inspect &amp; Bridge</p>
+    </header>
+
+    <section class="ave-status-card" aria-live="polite">
+      <div class="ave-row">
+        <span class="ave-label">OpenClaw</span>
+        <span id="connection" class="ave-value">Getrennt</span>
+      </div>
+      <div class="ave-row">
+        <span class="ave-label">Chat</span>
+        <span id="chat" class="ave-value">Kein aktiver Chat</span>
+      </div>
+      <div class="ave-row">
+        <span class="ave-label">Domscribe</span>
+        <span id="domscribe" class="ave-value">Nicht verfügbar</span>
+      </div>
+    </section>
+
+    <section class="ave-inspect">
+      <div class="ave-row ave-row-toggle">
+        <span class="ave-label">Inspect Mode</span>
+        <button id="inspectToggle" type="button" class="ave-toggle" aria-pressed="false">AUS</button>
+      </div>
+      <p id="selectionHint" class="ave-hint">Kein Element ausgewählt</p>
+      <p id="error" class="ave-error" hidden></p>
+    </section>
+
+    <section class="ave-connection">
+      <h2>Verbindung</h2>
+      <label class="ave-field">
+        Gateway-URL
+        <input id="gatewayUrl" type="url" placeholder="http://127.0.0.1:18789" autocomplete="off" />
+      </label>
+      <label class="ave-field">
+        Pairing-Code
+        <input id="pairingCode" type="text" placeholder="ABCD2345" autocomplete="off" spellcheck="false" />
+      </label>
+      <div class="ave-actions">
+        <button id="pairBtn" type="button">Koppeln</button>
+        <button id="disconnectBtn" type="button" class="ave-secondary">Trennen</button>
+      </div>
+    </section>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

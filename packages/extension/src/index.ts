@@ -1,6 +1,9 @@
 /**
- * Placeholder package for the Chrome MV3 extension (SLC-2).
+ * Extension package public exports (testable helpers).
  * Location: packages/extension/src/index.ts
  */
 
-export const EXTENSION_STATUS: "placeholder" = "placeholder";
+export { buildSelector, captureElement, truncate } from "./content/capture.js";
+export { nextBackoffMs, resetBackoff } from "./shared/reconnect.js";
+export { assertAllowedGatewayUrl } from "./bridge/client.js";
+export const EXTENSION_STATUS: "slc-2" = "slc-2";
