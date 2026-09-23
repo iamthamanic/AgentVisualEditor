@@ -1,9 +1,10 @@
 /**
- * AgentVisualEditor OpenClaw feature plugin entry (SLC-1 + SLC-2 bridge).
+ * AgentVisualEditor OpenClaw feature plugin entry (SLC-1..SLC-3).
  * Location: packages/openclaw-plugin/src/index.ts
  *
  * INV-1: chip ops never send. INV-3: session binding fail-closed.
- * INV-4: plugin-scoped pairing only. No agent tools in SLC-2.
+ * INV-4: plugin-scoped pairing only.
+ * SLC-3: prepare_send/send_outcome + next-turn injection + agent tools.
  */
 
 import { defineFeaturePlugin, type FeatureInvocationContext } from "openclaw/plugin-sdk/feature-plugin";
@@ -23,6 +24,7 @@ import { BRIDGE_PATH, PairingStore } from "./pairing.js";
 import { toBatchDto, type BatchDto } from "./project-batch.js";
 import { bindSessionIdentity } from "./session-binding.js";
 import { VisualBatchStore } from "./store.js";
+import { toActiveContextDto, toSelectionDetailDto } from "./tool-payloads.js";
 
 const SESSION_EXT_NAMESPACE = "visualBatch";
 
@@ -37,7 +39,12 @@ type OpErrorCode =
   | "invalid_code"
   | "expired_code"
   | "incompatible_protocol"
-  | "no_active_session";
+  | "no_active_session"
+  | "stale_batch"
+  | "stale_preparation"
+  | "unavailable_context"
+  | "no_context"
+  | "expired";
 
 type OpError = {
   ok: false;
@@ -100,7 +107,8 @@ function buildTestSource(input: {
 const plugin = defineFeaturePlugin({
   contract,
   name: "Agent Visual Editor",
-  description: "Native composer chips, pairing, and extension bridge for AgentVisualEditor.",
+  description:
+    "Native composer chips, pairing, extension bridge, send context, and agent tools for AgentVisualEditor.",
   setup(api, events) {
     const store = new VisualBatchStore();
     const pairing = new PairingStore();
@@ -151,8 +159,28 @@ const plugin = defineFeaturePlugin({
         const batch = store.findBySessionKey(ctx.sessionKey);
         if (batch) {
           store.deleteSession(batch.agentId, batch.sessionKey);
+          return;
+        }
+        const admitted = store.findAdmittedBySessionKey(ctx.sessionKey);
+        if (admitted) {
+          store.deleteSession(admitted.agentId, admitted.sessionKey);
         }
       },
+    });
+
+    // Fallback when mountDefault owns Send: inject only if the turn actually runs (RISK-004).
+    api.on("agent_turn_prepare", (_event, ctx) => {
+      const sessionKey = ctx.sessionKey?.trim();
+      const agentId = ctx.agentId?.trim();
+      if (!sessionKey || !agentId) {
+        return;
+      }
+      const admitted = store.admitDraftForTurn(agentId, sessionKey);
+      if (!admitted) {
+        return;
+      }
+      emitChanged(agentId, sessionKey);
+      return { prependContext: admitted.compactContext };
     });
 
     function resolveBinding(
@@ -163,6 +191,14 @@ const plugin = defineFeaturePlugin({
       return bindSessionIdentity({
         requestedSessionKey: input.sessionKey,
         requestedAgentId: input.agentId,
+        contextSessionKey: ctx.sessionKey,
+        contextAgentId: ctx.agentId,
+      });
+    }
+
+    function resolveToolBinding(context: FeatureInvocationContext) {
+      const ctx = contextIdentity(context);
+      return bindSessionIdentity({
         contextSessionKey: ctx.sessionKey,
         contextAgentId: ctx.agentId,
       });
@@ -239,6 +275,131 @@ const plugin = defineFeaturePlugin({
         const batch = store.clear(binding.identity.agentId, binding.identity.sessionKey);
         emitChanged(binding.identity.agentId, binding.identity.sessionKey);
         return { ok: true, batch: toBatchDto(batch) };
+      },
+
+      prepare_send(input, context) {
+        const binding = resolveBinding(input, context);
+        if (!binding.ok) {
+          return opError(binding.code, binding.message);
+        }
+        const result = store.prepareSend(
+          binding.identity.agentId,
+          binding.identity.sessionKey,
+          input.expectedRevision,
+        );
+        if (!result.ok) {
+          return opError(result.code, result.message);
+        }
+        emitChanged(binding.identity.agentId, binding.identity.sessionKey);
+        return {
+          ok: true as const,
+          preparationId: result.preparationId,
+          revision: result.revision,
+          batch: toBatchDto(result.batch),
+          compactContext: result.compactContext,
+        };
+      },
+
+      async send_outcome(input, context) {
+        const binding = resolveBinding(input, context);
+        if (!binding.ok) {
+          return opError(binding.code, binding.message);
+        }
+        const result = store.completeSend(
+          binding.identity.agentId,
+          binding.identity.sessionKey,
+          input.preparationId,
+          input.admitted,
+        );
+        if (!result.ok) {
+          return opError(result.code, result.message);
+        }
+
+        let injectionEnqueued = false;
+        if (result.admitted && result.compactContext) {
+          try {
+            const enqueued = await api.session.workflow.enqueueNextTurnInjection({
+              sessionKey: binding.identity.sessionKey,
+              agentId: binding.identity.agentId,
+              text: result.compactContext,
+              idempotencyKey: input.preparationId,
+              placement: "prepend_context",
+              ttlMs: 120_000,
+              metadata: {
+                preparationId: input.preparationId,
+                plugin: "agent-visual-editor",
+              },
+            });
+            injectionEnqueued = enqueued.enqueued;
+          } catch {
+            // Host may be unavailable in unit tests; store archive still holds context for tools.
+            injectionEnqueued = false;
+          }
+        }
+
+        emitChanged(binding.identity.agentId, binding.identity.sessionKey);
+        return {
+          ok: true as const,
+          state: result.state,
+          admitted: result.admitted,
+          batch: toBatchDto(result.batch),
+          injectionEnqueued,
+        };
+      },
+
+      get_active_context(input, context) {
+        const binding = resolveToolBinding(context);
+        if (!binding.ok) {
+          return opError(binding.code, binding.message);
+        }
+        const batch = store.getActiveContextBatch(
+          binding.identity.agentId,
+          binding.identity.sessionKey,
+        );
+        if (!batch) {
+          return opError("no_context", "Kein aktiver Visual-Kontext für diese Session");
+        }
+        if (input.batchId && input.batchId !== batch.id) {
+          return opError("forbidden", "Cross-Batch-Zugriff verweigert");
+        }
+        return {
+          ok: true as const,
+          context: toActiveContextDto(batch),
+        };
+      },
+
+      get_selection(input, context) {
+        const binding = resolveToolBinding(context);
+        if (!binding.ok) {
+          return opError(binding.code, binding.message);
+        }
+        const batch = store.getActiveContextBatch(
+          binding.identity.agentId,
+          binding.identity.sessionKey,
+        );
+        if (!batch) {
+          return opError("not_found", "Selektion nicht gefunden");
+        }
+        const selection = batch.selections.find((item) => item.id === input.selectionId);
+        if (!selection) {
+          return opError("not_found", "Selektion nicht gefunden");
+        }
+        return {
+          ok: true as const,
+          selection: toSelectionDetailDto(batch, selection),
+        };
+      },
+
+      get_screenshot(_input, context) {
+        const binding = resolveToolBinding(context);
+        if (!binding.ok) {
+          return opError(binding.code, binding.message);
+        }
+        // SLC-5 will deliver artifacts; fail closed until then (C-014 stub).
+        return opError(
+          "not_found",
+          "Kein Screenshot-Artifact verfügbar (noch nicht hochgeladen oder abgelaufen)",
+        );
       },
 
       get_ui_flags() {
@@ -370,3 +531,5 @@ export { contract } from "./contract.js";
 export { PairingStore, BRIDGE_PATH, PAIRING_COMPLETE_PATH } from "./pairing.js";
 export { ActiveSessionTracker } from "./active-session.js";
 export { BridgeMessageHandler } from "./bridge-handler.js";
+export { toActiveContextDto, toSelectionDetailDto } from "./tool-payloads.js";
+export { buildCompactNextTurnContext } from "@agent-visual-editor/core";

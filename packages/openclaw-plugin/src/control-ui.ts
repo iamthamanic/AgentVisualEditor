@@ -4,6 +4,7 @@
  *
  * German user-facing strings. Canonical setDraft/send only (FR-019/FR-020).
  * Composer reports active session for extension targeting (C-005).
+ * SLC-3: chip-region Senden wraps prepare_send → send → send_outcome (C-010/C-011).
  */
 
 import { defineControlUiPlugin } from "openclaw/plugin-sdk/control-ui";
@@ -186,6 +187,14 @@ export default defineControlUiPlugin({
         clearBtn.textContent = "Alle entfernen";
         clearBtn.hidden = true;
 
+        const sendWithContextBtn = document.createElement("button");
+        sendWithContextBtn.type = "button";
+        sendWithContextBtn.className = "ave-chip-send";
+        sendWithContextBtn.textContent = "Senden";
+        sendWithContextBtn.hidden = true;
+        sendWithContextBtn.title =
+          "Sendet die Nachricht und übergibt den Visual-Kontext an den nächsten Agent-Turn";
+
         const testBtn = document.createElement("button");
         testBtn.type = "button";
         testBtn.className = "ave-chip-test";
@@ -196,7 +205,7 @@ export default defineControlUiPlugin({
         status.className = "ave-chip-status";
         status.setAttribute("aria-live", "polite");
 
-        actions.append(clearBtn, testBtn);
+        actions.append(clearBtn, sendWithContextBtn, testBtn);
         chipRegion.append(chipList, actions, status);
 
         const defaultHost = document.createElement("div");
@@ -263,6 +272,7 @@ export default defineControlUiPlugin({
             chipList.append(item);
           }
           clearBtn.hidden = batch.selections.length === 0;
+          sendWithContextBtn.hidden = batch.selections.length === 0;
         };
 
         const refresh = async () => {
@@ -332,6 +342,60 @@ export default defineControlUiPlugin({
               renderChips(result.batch);
             } else {
               status.textContent = result.message;
+            }
+          } catch (error) {
+            if (!current.signal.aborted && !disposed) {
+              status.textContent = String(error);
+            }
+          }
+        };
+
+        /**
+         * Canonical Send wrap (C-010/C-011): prepare → props.send → send_outcome.
+         * mountDefault may still expose its own Send; agent_turn_prepare covers that path.
+         * INV-1: this button is the only chip-adjacent path that may call send().
+         */
+        sendWithContextBtn.onclick = async () => {
+          status.textContent = "";
+          if (!current.props.canSend || current.props.sending) {
+            status.textContent = current.props.disabledReason ?? "Senden gerade nicht möglich";
+            return;
+          }
+          try {
+            const prepared = await feature.invoke(
+              "prepare_send",
+              {
+                sessionKey: current.props.sessionKey,
+                agentId: current.props.agentId,
+              },
+              { sessionKey: current.props.sessionKey, agentId: current.props.agentId },
+            );
+            if (current.signal.aborted || disposed) return;
+            if (!prepared.ok) {
+              status.textContent = prepared.message;
+              return;
+            }
+            renderChips(prepared.batch);
+            const admitted = await current.props.send();
+            const outcome = await feature.invoke(
+              "send_outcome",
+              {
+                sessionKey: current.props.sessionKey,
+                agentId: current.props.agentId,
+                preparationId: prepared.preparationId,
+                admitted: admitted === true,
+              },
+              { sessionKey: current.props.sessionKey, agentId: current.props.agentId },
+            );
+            if (current.signal.aborted || disposed) return;
+            if (!outcome.ok) {
+              status.textContent = outcome.message;
+              void refresh();
+              return;
+            }
+            renderChips(outcome.batch);
+            if (!outcome.admitted) {
+              status.textContent = "Senden abgelehnt — Entwurf und Chips bleiben erhalten";
             }
           } catch (error) {
             if (!current.signal.aborted && !disposed) {

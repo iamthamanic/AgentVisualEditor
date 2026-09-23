@@ -10,3 +10,4 @@ export * from "./redact.js";
 export * from "./identity.js";
 export * from "./selection.js";
 export * from "./batch.js";
+export * from "./compact-context.js";

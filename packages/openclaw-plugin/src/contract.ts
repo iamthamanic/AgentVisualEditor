@@ -1,8 +1,9 @@
 /**
- * Feature contract for SLC-1/SLC-2 ops (no agent tools).
+ * Feature contract for SLC-1..SLC-3 ops and agent tools.
  * Location: packages/openclaw-plugin/src/contract.ts
  *
  * OpenClaw requires operation ids matching /^[a-z][a-z0-9._-]{0,127}$/
+ * Agent tools via operation.tool → registerTool (C-012..C-014).
  */
 
 import { Type } from "typebox";
@@ -52,6 +53,11 @@ const OpErrorSchema = Type.Object(
       Type.Literal("expired_code"),
       Type.Literal("incompatible_protocol"),
       Type.Literal("no_active_session"),
+      Type.Literal("stale_batch"),
+      Type.Literal("stale_preparation"),
+      Type.Literal("unavailable_context"),
+      Type.Literal("no_context"),
+      Type.Literal("expired"),
     ]),
     message: Type.String(),
   },
@@ -65,6 +71,87 @@ const ConnectionRowSchema = Type.Object(
     extensionLabel: Type.Union([Type.String(), Type.Null()]),
     createdAtMs: Type.Integer({ minimum: 0 }),
     revoked: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
+const ActiveContextSchema = Type.Object(
+  {
+    batchId: Type.String(),
+    state: Type.String(),
+    sessionKey: Type.String(),
+    agentId: Type.String(),
+    selectionCount: Type.Integer({ minimum: 0 }),
+    selections: Type.Array(
+      Type.Object(
+        {
+          id: Type.String(),
+          tag: Type.String(),
+          selector: Type.String(),
+          textSummary: Type.Union([Type.String(), Type.Null()]),
+          component: Type.Union([Type.String(), Type.Null()]),
+          file: Type.Union([Type.String(), Type.Null()]),
+          line: Type.Union([Type.Integer(), Type.Null()]),
+          sourceFreshness: Type.Union([Type.String(), Type.Null()]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    truncated: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
+const SelectionDetailSchema = Type.Object(
+  {
+    id: Type.String(),
+    batchId: Type.String(),
+    capturedAt: Type.String(),
+    pageUrl: Type.String(),
+    pageTitle: Type.Union([Type.String(), Type.Null()]),
+    tag: Type.String(),
+    selector: Type.String(),
+    textSummary: Type.Union([Type.String(), Type.Null()]),
+    box: Type.Union([
+      Type.Object(
+        {
+          x: Type.Number(),
+          y: Type.Number(),
+          width: Type.Number(),
+          height: Type.Number(),
+        },
+        { additionalProperties: false },
+      ),
+      Type.Null(),
+    ]),
+    domSnapshot: Type.Union([Type.String(), Type.Null()]),
+    domTruncated: Type.Boolean(),
+    source: Type.Union([
+      Type.Object(
+        {
+          resolver: Type.String(),
+          freshness: Type.String(),
+          component: Type.Union([Type.String(), Type.Null()]),
+          file: Type.Union([Type.String(), Type.Null()]),
+          line: Type.Union([Type.Integer(), Type.Null()]),
+          column: Type.Union([Type.Integer(), Type.Null()]),
+          dataDs: Type.Union([Type.String(), Type.Null()]),
+        },
+        { additionalProperties: false },
+      ),
+      Type.Null(),
+    ]),
+    changes: Type.Array(
+      Type.Object(
+        {
+          id: Type.String(),
+          kind: Type.String(),
+          property: Type.Union([Type.String(), Type.Null()]),
+          status: Type.String(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -130,6 +217,136 @@ export const contract = defineFeatureContract({
       input: Type.Object({ ...SessionIdentityFields }, { additionalProperties: false }),
       output: Type.Union([
         Type.Object({ ok: Type.Literal(true), batch: BatchProjectionSchema }, { additionalProperties: false }),
+        OpErrorSchema,
+      ]),
+    },
+    prepare_send: {
+      kind: "action",
+      description:
+        "Prepare the current VisualBatch for an explicit user Send (C-010). Does not start an agent run.",
+      input: Type.Object(
+        {
+          ...SessionIdentityFields,
+          expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            preparationId: Type.String(),
+            revision: Type.Integer({ minimum: 0 }),
+            batch: BatchProjectionSchema,
+            compactContext: Type.String(),
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
+    },
+    send_outcome: {
+      kind: "action",
+      description:
+        "Admit or reject a Send preparation (C-011). On admit, clears chips and queues next-turn context.",
+      input: Type.Object(
+        {
+          ...SessionIdentityFields,
+          preparationId: Type.String({ minLength: 1, maxLength: 128 }),
+          admitted: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            state: Type.String(),
+            admitted: Type.Boolean(),
+            batch: BatchProjectionSchema,
+            injectionEnqueued: Type.Boolean(),
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
+    },
+    get_active_context: {
+      kind: "query",
+      description:
+        "Return the active/sent visual context for the caller's session (C-012). Read-only.",
+      tool: {
+        name: "agent_visual_editor.get_active_context",
+        label: "AVE Active Context",
+      },
+      input: Type.Object(
+        {
+          batchId: Type.Optional(Type.String({ maxLength: 128 })),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            context: ActiveContextSchema,
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
+    },
+    get_selection: {
+      kind: "query",
+      description:
+        "Return one selection with source/change metadata for the caller's session (C-013). Read-only.",
+      tool: {
+        name: "agent_visual_editor.get_selection",
+        label: "AVE Selection",
+      },
+      input: Type.Object(
+        {
+          selectionId: Type.String({ minLength: 1, maxLength: 128 }),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            selection: SelectionDetailSchema,
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
+    },
+    get_screenshot: {
+      kind: "query",
+      description:
+        "Return a screenshot artifact for a selection when available (C-014). Read-only stub until SLC-5.",
+      tool: {
+        name: "agent_visual_editor.get_screenshot",
+        label: "AVE Screenshot",
+        optional: true,
+      },
+      input: Type.Object(
+        {
+          selectionId: Type.Optional(Type.String({ maxLength: 128 })),
+          artifactId: Type.Optional(Type.String({ maxLength: 128 })),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            artifactId: Type.String(),
+            mimeType: Type.String(),
+            expired: Type.Literal(false),
+          },
+          { additionalProperties: false },
+        ),
         OpErrorSchema,
       ]),
     },

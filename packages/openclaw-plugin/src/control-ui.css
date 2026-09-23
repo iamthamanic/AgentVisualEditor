@@ -63,6 +63,7 @@
 }
 
 .ave-chip-clear,
+.ave-chip-send,
 .ave-chip-test {
   border: 1px solid var(--border);
   background: transparent;
@@ -75,8 +76,13 @@
 }
 
 .ave-chip-clear:hover,
+.ave-chip-send:hover,
 .ave-chip-test:hover {
   background: var(--bg-elevated, var(--panel, transparent));
+}
+
+.ave-chip-send {
+  border-color: var(--accent, var(--border));
 }
 
 .ave-chip-status {

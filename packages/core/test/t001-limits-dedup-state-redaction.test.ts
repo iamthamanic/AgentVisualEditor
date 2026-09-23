@@ -113,15 +113,19 @@ describe("T-001 limits / dedup / state / redaction", () => {
     batch = prepareSend(batch);
     assert.equal(batch.state, "preparing");
     assert.equal(batch.selections.length, 1);
+    assert.ok(batch.preparationId);
 
     batch = rejectSend(batch);
     assert.equal(batch.state, "draft");
     assert.equal(batch.selections.length, 1);
+    assert.equal(batch.preparationId, undefined);
 
     batch = prepareSend(batch);
+    assert.ok(batch.preparationId);
     batch = admitSend(batch);
     assert.equal(batch.state, "sent");
     assert.ok(batch.admittedAt);
+    assert.equal(batch.preparationId, undefined);
   });
 
   it("supports cleared and expired transitions", () => {
