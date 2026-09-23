@@ -19,26 +19,29 @@ export type BridgeClientCallbacks = {
   onSelectionResult: (result: {
     ok: boolean;
     selectionId?: string;
+    requestId?: string;
     artifactId?: string;
     message?: string;
     sourceFreshness?: string;
   }) => void;
+  /** Push previewEditingEnabled from bridge.hello.ack / activeSession.changed. */
+  onPreviewEditingEnabled?: (enabled: boolean) => void;
   /** C-015 agent preview.apply from plugin. */
   onPreviewApply?: (command: {
     requestId: string;
     selectionId: string;
     selector: string;
     styles: Array<{ property: string; value: string }>;
+    pageUrl?: string;
   }) => void;
   /** RISK-009 preview.clear from plugin. */
   onPreviewClear?: (command: { requestId: string; selectionId?: string }) => void;
 };
 
-function toWsUrl(gatewayBaseUrl: string, bridgePath: string, token: string): string {
+function toWsUrl(gatewayBaseUrl: string, bridgePath: string): string {
   const base = new URL(gatewayBaseUrl);
   const wsProtocol = base.protocol === "https:" ? "wss:" : "ws:";
   const url = new URL(bridgePath, `${wsProtocol}//${base.host}`);
-  url.searchParams.set("token", token);
   return url.toString();
 }
 
@@ -271,8 +274,8 @@ export class BridgeClient {
     }
 
     this.callbacks.onState(this.backoff.attempt === 0 ? "connecting" : "reconnecting");
-    const url = toWsUrl(this.config.gatewayBaseUrl, this.bridgePath, this.config.token);
-    const ws = new WebSocket(url);
+    const url = toWsUrl(this.config.gatewayBaseUrl, this.bridgePath);
+    const ws = new WebSocket(url, [`ave-auth.${this.config.token}`]);
     this.socket = ws;
     this.helloDone = false;
 
@@ -343,6 +346,9 @@ export class BridgeClient {
             : "none",
         revision: typeof msg.revision === "number" ? msg.revision : 0,
       };
+      if (typeof msg.previewEditingEnabled === "boolean") {
+        this.callbacks.onPreviewEditingEnabled?.(msg.previewEditingEnabled);
+      }
       this.callbacks.onSession(chat);
       return;
     }
@@ -361,7 +367,17 @@ export class BridgeClient {
         }
       }
       if (requestId && selectionId && selector && styles.length > 0) {
-        this.callbacks.onPreviewApply?.({ requestId, selectionId, selector, styles });
+        const command: {
+          requestId: string;
+          selectionId: string;
+          selector: string;
+          styles: Array<{ property: string; value: string }>;
+          pageUrl?: string;
+        } = { requestId, selectionId, selector, styles };
+        if (typeof msg.pageUrl === "string") {
+          command.pageUrl = msg.pageUrl;
+        }
+        this.callbacks.onPreviewApply?.(command);
       }
       return;
     }
@@ -379,6 +395,9 @@ export class BridgeClient {
 
     if (msg.ok === true && msg.type === "bridge.hello.ack") {
       this.helloDone = true;
+      if (typeof msg.previewEditingEnabled === "boolean") {
+        this.callbacks.onPreviewEditingEnabled?.(msg.previewEditingEnabled);
+      }
       return;
     }
 
@@ -386,6 +405,7 @@ export class BridgeClient {
       this.callbacks.onSelectionResult({
         ok: true,
         selectionId: msg.selectionId,
+        ...(typeof msg.requestId === "string" ? { requestId: msg.requestId } : {}),
         ...(typeof msg.artifactId === "string" ? { artifactId: msg.artifactId } : {}),
         ...(typeof msg.sourceFreshness === "string"
           ? { sourceFreshness: msg.sourceFreshness }
@@ -401,6 +421,7 @@ export class BridgeClient {
       this.callbacks.onSelectionResult({
         ok: false,
         message: msg.message,
+        ...(typeof msg.requestId === "string" ? { requestId: msg.requestId } : {}),
       });
       this.callbacks.onError(msg.message);
     }

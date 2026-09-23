@@ -1,14 +1,12 @@
 /**
- * Agent preview stylesheet executor (C-015 / RISK-009).
+ * Agent preview style executor (C-015 / RISK-009).
  * Location: packages/extension/src/content/agent-preview.ts
  *
- * Applies allowlisted CSS via a dedicated stylesheet (not page CSS / Design-tab inline).
- * Never evaluates JS (BR-009). Clear disables overrides for HMR verification.
+ * Applies allowlisted CSS via HTMLElement.style.setProperty only (no stylesheet
+ * string concatenation). Never evaluates JS (BR-009). Clear restores prior values.
  */
 
 import { isAllowedStyleProperty, isSafeCssValue } from "../editor/allowed-styles.js";
-
-const STYLE_ELEMENT_ID = "ave-agent-preview";
 
 export type AgentPreviewApplyMessage = {
   type: "agent_preview_apply";
@@ -37,37 +35,18 @@ export type AgentPreviewApplyErr = {
 
 export type AgentPreviewClearOk = { ok: true };
 
-/** selectionId → property → value (plus __selector__). */
-const overrides = new Map<string, Map<string, string>>();
+type AppliedProperty = {
+  property: string;
+  previous: string | null;
+};
 
-function ensureStyleElement(): HTMLStyleElement {
-  const existing = document.getElementById(STYLE_ELEMENT_ID);
-  if (existing instanceof HTMLStyleElement) {
-    return existing;
-  }
-  const el = document.createElement("style");
-  el.id = STYLE_ELEMENT_ID;
-  el.setAttribute("data-ave", "agent-preview");
-  document.documentElement.appendChild(el);
-  return el;
-}
+type SelectionOverride = {
+  selector: string;
+  properties: Map<string, AppliedProperty>;
+};
 
-function rebuildStylesheet(): void {
-  const sheet = ensureStyleElement();
-  const blocks: string[] = [];
-  for (const [, props] of overrides) {
-    const selector = props.get("__selector__");
-    if (!selector) continue;
-    const decls: string[] = [];
-    for (const [property, value] of props) {
-      if (property === "__selector__") continue;
-      decls.push(`${property}: ${value} !important`);
-    }
-    if (decls.length === 0) continue;
-    blocks.push(`${selector} { ${decls.join("; ")}; }`);
-  }
-  sheet.textContent = blocks.join("\n");
-}
+/** selectionId → applied inline overrides (for clear/restore). */
+const overrides = new Map<string, SelectionOverride>();
 
 function resolve(selector: string): Element | null {
   try {
@@ -77,19 +56,35 @@ function resolve(selector: string): Element | null {
   }
 }
 
+function restoreSelection(selectionId: string): void {
+  const bucket = overrides.get(selectionId);
+  if (!bucket) {
+    return;
+  }
+  if (typeof document !== "undefined") {
+    const el = resolve(bucket.selector);
+    if (el instanceof HTMLElement) {
+      for (const entry of bucket.properties.values()) {
+        if (entry.previous === null || entry.previous.length === 0) {
+          el.style.removeProperty(entry.property);
+        } else {
+          el.style.setProperty(entry.property, entry.previous);
+        }
+      }
+    }
+  }
+  overrides.delete(selectionId);
+}
+
 export function handleAgentPreviewMessage(
   message: AgentPreviewMessage,
 ): AgentPreviewApplyOk | AgentPreviewApplyErr | AgentPreviewClearOk {
   if (message.type === "agent_preview_clear") {
     if (message.selectionId !== undefined) {
-      overrides.delete(message.selectionId);
+      restoreSelection(message.selectionId);
     } else {
-      overrides.clear();
-    }
-    if (typeof document !== "undefined") {
-      rebuildStylesheet();
-      if (overrides.size === 0) {
-        document.getElementById(STYLE_ELEMENT_ID)?.remove();
+      for (const id of [...overrides.keys()]) {
+        restoreSelection(id);
       }
     }
     return { ok: true };
@@ -130,21 +125,36 @@ export function handleAgentPreviewMessage(
     };
   }
 
-  const applied: Array<{ property: string; value: string; oldValue?: string }> = [];
   let bucket = overrides.get(message.selectionId);
-  if (!bucket) {
-    bucket = new Map();
+  if (!bucket || bucket.selector !== message.selector) {
+    if (bucket) {
+      restoreSelection(message.selectionId);
+    }
+    bucket = { selector: message.selector, properties: new Map() };
     overrides.set(message.selectionId, bucket);
   }
-  bucket.set("__selector__", message.selector);
+
+  const applied: Array<{ property: string; value: string; oldValue?: string }> = [];
 
   for (const style of message.styles) {
-    const computed = getComputedStyle(el).getPropertyValue(style.property).trim();
-    const oldValue = bucket.get(style.property) ?? computed;
-    bucket.set(style.property, style.value.trim());
+    const property = style.property;
+    const value = style.value.trim();
+    const existing = bucket.properties.get(property);
+    const previous =
+      existing !== undefined
+        ? existing.previous
+        : el.style.getPropertyValue(property).trim() || null;
+    const oldValue =
+      existing !== undefined
+        ? el.style.getPropertyValue(property).trim() || previous || ""
+        : previous ?? el.style.getPropertyValue(property).trim();
+
+    el.style.setProperty(property, value, "important");
+    bucket.properties.set(property, { property, previous });
+
     const entry: { property: string; value: string; oldValue?: string } = {
-      property: style.property,
-      value: style.value.trim(),
+      property,
+      value,
     };
     if (oldValue.length > 0) {
       entry.oldValue = oldValue;
@@ -152,25 +162,22 @@ export function handleAgentPreviewMessage(
     applied.push(entry);
   }
 
-  rebuildStylesheet();
   return { ok: true, applied };
 }
 
 /** Test helper: current override count. */
 export function agentPreviewOverrideCount(): number {
   let n = 0;
-  for (const [, props] of overrides) {
-    for (const key of props.keys()) {
-      if (key !== "__selector__") n += 1;
-    }
+  for (const bucket of overrides.values()) {
+    n += bucket.properties.size;
   }
   return n;
 }
 
 /** Test helper: reset module state. */
 export function resetAgentPreviewForTests(): void {
-  overrides.clear();
-  if (typeof document !== "undefined") {
-    document.getElementById(STYLE_ELEMENT_ID)?.remove();
+  for (const id of [...overrides.keys()]) {
+    restoreSelection(id);
   }
+  overrides.clear();
 }

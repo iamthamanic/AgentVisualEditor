@@ -14,6 +14,7 @@ import {
 } from "./limits.js";
 import { PayloadTooLargeError } from "./errors.js";
 import { redactText, redactUnknownStrings } from "./redact.js";
+import { sanitizePageUrl } from "./sanitize-url.js";
 import type { SelectionDraftInput, SourceContext, VisualSelection } from "./types.js";
 
 function truncateUtf8(value: string, maxBytes: number): string {
@@ -93,7 +94,7 @@ export function admitSelection(input: SelectionDraftInput, id = createSelectionI
   const selection: VisualSelection = {
     id,
     capturedAt: new Date().toISOString(),
-    pageUrl: input.pageUrl,
+    pageUrl: sanitizePageUrl(input.pageUrl),
     tag: input.tag,
     selector: input.selector,
     changes: input.changes ? [...input.changes] : [],

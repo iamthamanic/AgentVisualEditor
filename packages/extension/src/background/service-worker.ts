@@ -38,12 +38,98 @@ let lastSelector: string | null = null;
 let lastError: string | null = null;
 let lastArtifactId: string | null = null;
 let domscribe: DomscribeUiState = "unavailable";
-const previewEditingEnabled = true;
+let previewEditingEnabled = true;
+
+/** selectionId → chrome tab that created the selection (agent preview routing). */
+const selectionTabById = new Map<string, number>();
+/** selectionId → page URL at capture (fallback tab match). */
+const selectionPageUrlById = new Map<string, string>();
+/** Pending selection.create requestId → tab/page until bridge returns selectionId. */
+const pendingCreateByRequestId = new Map<string, { tabId: number; pageUrl: string }>();
 
 function mapSourceFreshness(value: unknown): DomscribeUiState | undefined {
   if (value === "fresh") return "available";
   if (value === "stale") return "stale";
   if (value === "unavailable" || value === "unmapped") return "unavailable";
+  return undefined;
+}
+
+function rememberSelectionOwner(
+  selectionId: string,
+  tabId: number,
+  pageUrl: string,
+): void {
+  selectionTabById.set(selectionId, tabId);
+  if (pageUrl.length > 0) {
+    selectionPageUrlById.set(selectionId, pageUrl);
+  }
+}
+
+function forgetSelectionOwner(selectionId: string): void {
+  selectionTabById.delete(selectionId);
+  selectionPageUrlById.delete(selectionId);
+}
+
+async function activeTabId(): Promise<number | undefined> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs[0]?.id;
+}
+
+async function sendToTab(tabId: number, message: unknown): Promise<unknown> {
+  return chrome.tabs.sendMessage(tabId, message);
+}
+
+async function sendToActiveTab(message: unknown): Promise<unknown> {
+  const tabId = await activeTabId();
+  if (tabId === undefined) {
+    throw new Error("Kein aktiver Tab");
+  }
+  return sendToTab(tabId, message);
+}
+
+function urlsMatch(a: string, b: string): boolean {
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    return left.origin === right.origin && left.pathname === right.pathname;
+  } catch {
+    return a === b;
+  }
+}
+
+/**
+ * Resolve the tab that owns a selection for agent preview.
+ * Never falls back to the active tab — that would apply styles to the wrong page.
+ */
+async function resolvePreviewTabId(
+  selectionId: string,
+  pageUrl?: string,
+): Promise<number | undefined> {
+  const owned = selectionTabById.get(selectionId);
+  if (owned !== undefined) {
+    try {
+      const tab = await chrome.tabs.get(owned);
+      if (tab.id !== undefined) {
+        return tab.id;
+      }
+    } catch {
+      forgetSelectionOwner(selectionId);
+    }
+  }
+
+  const candidateUrl = pageUrl ?? selectionPageUrlById.get(selectionId);
+  if (candidateUrl === undefined || candidateUrl.length === 0) {
+    return undefined;
+  }
+
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id === undefined || typeof tab.url !== "string") continue;
+    if (urlsMatch(tab.url, candidateUrl)) {
+      rememberSelectionOwner(selectionId, tab.id, candidateUrl);
+      return tab.id;
+    }
+  }
   return undefined;
 }
 
@@ -79,19 +165,6 @@ async function broadcastInspect(): Promise<void> {
       }
     }),
   );
-}
-
-async function activeTabId(): Promise<number | undefined> {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tabs[0]?.id;
-}
-
-async function sendToActiveTab(message: unknown): Promise<unknown> {
-  const tabId = await activeTabId();
-  if (tabId === undefined) {
-    throw new Error("Kein aktiver Tab");
-  }
-  return chrome.tabs.sendMessage(tabId, message);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -132,6 +205,12 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
         broadcastStatus();
       }
     },
+    onPreviewEditingEnabled: (enabled) => {
+      if (previewEditingEnabled !== enabled) {
+        previewEditingEnabled = enabled;
+        broadcastStatus();
+      }
+    },
     onError: (message) => {
       lastError = message;
       broadcastStatus();
@@ -140,6 +219,13 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
       if (result.ok && result.selectionId) {
         lastSelectionId = result.selectionId;
         lastError = null;
+        if (result.requestId !== undefined) {
+          const pending = pendingCreateByRequestId.get(result.requestId);
+          if (pending !== undefined) {
+            rememberSelectionOwner(result.selectionId, pending.tabId, pending.pageUrl);
+            pendingCreateByRequestId.delete(result.requestId);
+          }
+        }
         if (result.artifactId) {
           lastArtifactId = result.artifactId;
         }
@@ -149,13 +235,25 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
         }
       } else if (result.message) {
         lastError = result.message;
+        if (result.requestId !== undefined) {
+          pendingCreateByRequestId.delete(result.requestId);
+        }
       }
       broadcastStatus();
     },
     onPreviewApply: (command) => {
       void (async () => {
         try {
-          const raw = await sendToActiveTab({
+          const tabId = await resolvePreviewTabId(command.selectionId, command.pageUrl);
+          if (tabId === undefined) {
+            bridge?.sendPreviewApplyError({
+              requestId: command.requestId,
+              code: "browser_unavailable",
+              message: "Kein Tab für diese Selektion (stale/browser_unavailable)",
+            });
+            return;
+          }
+          const raw = await sendToTab(tabId, {
             type: "agent_preview_apply",
             selectionId: command.selectionId,
             selector: command.selector,
@@ -212,8 +310,24 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
           };
           if (command.selectionId !== undefined) {
             payload.selectionId = command.selectionId;
+            const tabId = await resolvePreviewTabId(command.selectionId);
+            if (tabId === undefined) {
+              return;
+            }
+            await sendToTab(tabId, payload);
+            return;
           }
-          await sendToActiveTab(payload);
+          // Global clear: all owned selection tabs (not silent active-tab).
+          const tabIds = new Set(selectionTabById.values());
+          await Promise.all(
+            [...tabIds].map(async (tabId) => {
+              try {
+                await sendToTab(tabId, payload);
+              } catch {
+                // Best-effort
+              }
+            }),
+          );
         } catch {
           // Best-effort clear for HMR verify (RISK-009).
         }
@@ -252,7 +366,7 @@ function pushChangeUpdate(selectionId: string, change: VisualChangePayload): voi
   });
 }
 
-chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentToBackground, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentToBackground, sender, sendResponse) => {
   void (async () => {
     if (message.type === "get_status") {
       sendResponse(statusPayload());
@@ -292,6 +406,9 @@ chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentTo
         status: "none",
         revision: 0,
       };
+      selectionTabById.clear();
+      selectionPageUrlById.clear();
+      pendingCreateByRequestId.clear();
       broadcastStatus();
       sendResponse({ ok: true, status: statusPayload() });
       return;
@@ -307,18 +424,30 @@ chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentTo
 
     if (message.type === "remove_selection") {
       const requestId = `rm_${crypto.randomUUID()}`;
+      forgetSelectionOwner(message.selectionId);
       bridge?.sendSelectionRemove(message.selectionId, requestId);
       sendResponse({ ok: true });
       return;
     }
 
     if (message.type === "selection_captured") {
+      const tabId = sender.tab?.id;
+      const selection = { ...message.selection };
+      if (tabId !== undefined) {
+        selection.tabId = String(tabId);
+      }
       const local = await loadLocalSelections();
-      local.push(message.selection);
+      local.push(selection);
       await saveLocalSelections(local);
-      lastSelector = message.selection.element.selector;
+      lastSelector = selection.element.selector;
       const requestId = `sel_${crypto.randomUUID()}`;
-      bridge?.sendSelectionCreate(message.selection, requestId);
+      if (tabId !== undefined) {
+        pendingCreateByRequestId.set(requestId, {
+          tabId,
+          pageUrl: selection.page.url,
+        });
+      }
+      bridge?.sendSelectionCreate(selection, requestId);
       sendResponse({ ok: true });
       return;
     }

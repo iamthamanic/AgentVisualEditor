@@ -90,12 +90,46 @@ export class PairingStore {
   private readonly pending = new Map<string, PendingPairing>();
   private readonly connections = new Map<string, PairedConnection>();
   private readonly tokenIndex = new Map<string, string>();
+  /** Global start rate limit (shared; no remote identity at start). */
   private startWindow: { startedAtMs: number; count: number } = { startedAtMs: 0, count: 0 };
+  /** Complete-failure rate limit keyed by extensionInstanceId. */
+  private readonly completeFailWindows = new Map<
+    string,
+    { startedAtMs: number; count: number }
+  >();
 
   constructor(
     private readonly now: () => number = () => Date.now(),
     private readonly codeTtlMs = PAIRING_CODE_TTL_MS,
   ) {}
+
+  private noteCompleteFailure(extensionInstanceId: string, nowMs: number): void {
+    const key = extensionInstanceId.trim() || "unknown";
+    let window = this.completeFailWindows.get(key);
+    if (!window || nowMs - window.startedAtMs > 60_000) {
+      window = { startedAtMs: nowMs, count: 0 };
+      this.completeFailWindows.set(key, window);
+    }
+    window.count += 1;
+  }
+
+  private isCompleteRateLimited(extensionInstanceId: string, nowMs: number): boolean {
+    const key = extensionInstanceId.trim() || "unknown";
+    const window = this.completeFailWindows.get(key);
+    if (!window) {
+      return false;
+    }
+    if (nowMs - window.startedAtMs > 60_000) {
+      this.completeFailWindows.delete(key);
+      return false;
+    }
+    return window.count >= 10;
+  }
+
+  private resetCompleteFailures(extensionInstanceId: string, nowMs: number): void {
+    const key = extensionInstanceId.trim() || "unknown";
+    this.completeFailWindows.set(key, { startedAtMs: nowMs, count: 0 });
+  }
 
   start(label?: string): PairingStartResult | PairingCompleteErr {
     const nowMs = this.now();
@@ -149,14 +183,23 @@ export class PairingStore {
     extensionLabel?: string;
     protocolVersion: number;
   }): PairingCompleteOk | PairingCompleteErr {
+    const nowMs = this.now();
+    if (this.isCompleteRateLimited(input.extensionInstanceId, nowMs)) {
+      return {
+        ok: false,
+        code: "rate_limited",
+        message: "Zu viele fehlgeschlagene Pairing-Versuche — bitte warten",
+      };
+    }
+
     if (input.protocolVersion !== 1) {
+      this.noteCompleteFailure(input.extensionInstanceId, nowMs);
       return {
         ok: false,
         code: "incompatible_protocol",
         message: "Protokollversion nicht unterstützt",
       };
     }
-    const nowMs = this.now();
     const codeHash = hashSecret(input.code.trim().toUpperCase());
     let matchedAttemptId: string | undefined;
     for (const [attemptId, pending] of this.pending) {
@@ -167,17 +210,23 @@ export class PairingStore {
     }
     if (matchedAttemptId === undefined) {
       this.purgeExpired(nowMs);
+      this.noteCompleteFailure(input.extensionInstanceId, nowMs);
       return { ok: false, code: "invalid_code", message: "Ungültiger Pairing-Code" };
     }
     const pending = this.pending.get(matchedAttemptId);
     if (pending === undefined) {
+      this.noteCompleteFailure(input.extensionInstanceId, nowMs);
       return { ok: false, code: "invalid_code", message: "Ungültiger Pairing-Code" };
     }
     this.pending.delete(matchedAttemptId);
     this.purgeExpired(nowMs);
     if (pending.expiresAtMs < nowMs) {
+      this.noteCompleteFailure(input.extensionInstanceId, nowMs);
       return { ok: false, code: "expired_code", message: "Pairing-Code abgelaufen" };
     }
+
+    // Successful complete resets this extension's failure window.
+    this.resetCompleteFailures(input.extensionInstanceId, nowMs);
 
     const connectionId = mintId("conn");
     const token = mintToken();

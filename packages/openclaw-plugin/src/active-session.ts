@@ -25,6 +25,11 @@ export class ActiveSessionTracker {
     revision: 0,
   };
   private readonly listeners = new Set<ActiveSessionListener>();
+  private previewEditingEnabled = true;
+
+  setPreviewEditingEnabled(enabled: boolean): void {
+    this.previewEditingEnabled = enabled;
+  }
 
   get(): ActiveSessionSnapshot {
     return { ...this.snapshot };
@@ -120,6 +125,7 @@ export class ActiveSessionTracker {
       agentId: this.snapshot.agentId,
       title: this.snapshot.title,
       status: this.snapshot.status,
+      previewEditingEnabled: this.previewEditingEnabled,
     };
   }
 }

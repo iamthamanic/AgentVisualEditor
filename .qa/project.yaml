@@ -13,6 +13,7 @@ testGate:
     - npm run typecheck
     - npm run build
     - npm test
+    - npm run lint
     - npm run check:boundary
     - npm run check:licenses
     - cd packages/openclaw-plugin && npm run build && npm run validate

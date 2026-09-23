@@ -27,6 +27,9 @@ function nonEmpty(value: string | undefined | null): value is string {
 
 /**
  * Resolve and validate session identity. Fail closed — never guess a session.
+ *
+ * Host context (contextSessionKey + contextAgentId) is required.
+ * Requested keys may only MATCH context; they never substitute when context is missing.
  */
 export function bindSessionIdentity(input: {
   requestedSessionKey?: string;
@@ -34,18 +37,7 @@ export function bindSessionIdentity(input: {
   contextSessionKey?: string;
   contextAgentId?: string;
 }): BindingResult {
-  const sessionKey = nonEmpty(input.requestedSessionKey)
-    ? input.requestedSessionKey.trim()
-    : nonEmpty(input.contextSessionKey)
-      ? input.contextSessionKey.trim()
-      : undefined;
-  const agentId = nonEmpty(input.requestedAgentId)
-    ? input.requestedAgentId.trim()
-    : nonEmpty(input.contextAgentId)
-      ? input.contextAgentId.trim()
-      : undefined;
-
-  if (!sessionKey || !agentId) {
+  if (!nonEmpty(input.contextSessionKey) || !nonEmpty(input.contextAgentId)) {
     return {
       ok: false,
       code: "no_session_context",
@@ -53,8 +45,11 @@ export function bindSessionIdentity(input: {
     };
   }
 
-  if (nonEmpty(input.requestedSessionKey) && nonEmpty(input.contextSessionKey)) {
-    if (input.requestedSessionKey.trim() !== input.contextSessionKey.trim()) {
+  const sessionKey = input.contextSessionKey.trim();
+  const agentId = input.contextAgentId.trim();
+
+  if (nonEmpty(input.requestedSessionKey)) {
+    if (input.requestedSessionKey.trim() !== sessionKey) {
       return {
         ok: false,
         code: "forbidden",
@@ -63,8 +58,8 @@ export function bindSessionIdentity(input: {
     }
   }
 
-  if (nonEmpty(input.requestedAgentId) && nonEmpty(input.contextAgentId)) {
-    if (input.requestedAgentId.trim() !== input.contextAgentId.trim()) {
+  if (nonEmpty(input.requestedAgentId)) {
+    if (input.requestedAgentId.trim() !== agentId) {
       return {
         ok: false,
         code: "forbidden",

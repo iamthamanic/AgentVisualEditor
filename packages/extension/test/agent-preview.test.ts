@@ -33,7 +33,33 @@ describe("agent preview executor (C-015)", () => {
       type: "agent_preview_apply",
       selectionId: "sel_1",
       selector: "#x",
-      styles: [{ property: "background", value: "url(javascript:alert(1))" }],
+      styles: [{ property: "background-color", value: "url(javascript:alert(1))" }],
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok && "code" in result) {
+      assert.equal(result.code, "forbidden_property");
+    }
+  });
+
+  it("rejects background shorthand property", () => {
+    const result = handleAgentPreviewMessage({
+      type: "agent_preview_apply",
+      selectionId: "sel_1",
+      selector: "#x",
+      styles: [{ property: "background", value: "red" }],
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok && "code" in result) {
+      assert.equal(result.code, "forbidden_property");
+    }
+  });
+
+  it("rejects CSS breakout values", () => {
+    const result = handleAgentPreviewMessage({
+      type: "agent_preview_apply",
+      selectionId: "sel_1",
+      selector: "#x",
+      styles: [{ property: "color", value: "red; } * { display: none" }],
     });
     assert.equal(result.ok, false);
     if (!result.ok && "code" in result) {

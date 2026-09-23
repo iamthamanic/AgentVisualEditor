@@ -7,6 +7,7 @@ export * from "./types.js";
 export * from "./limits.js";
 export * from "./errors.js";
 export * from "./redact.js";
+export * from "./sanitize-url.js";
 export * from "./identity.js";
 export * from "./selection.js";
 export * from "./batch.js";

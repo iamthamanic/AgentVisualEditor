@@ -20,6 +20,17 @@ describe("T-005 session targeting + canonical send", () => {
     }
   });
 
+  it("request-only without host context is no_session_context (INV-3)", () => {
+    const denied = bindSessionIdentity({
+      requestedSessionKey: "session-a",
+      requestedAgentId: "agent-1",
+    });
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.code, "no_session_context");
+    }
+  });
+
   it("rejects cross-session requests (INV-3)", () => {
     const denied = bindSessionIdentity({
       requestedSessionKey: "session-a",

@@ -34,7 +34,6 @@ export const ALLOWED_STYLE_PROPERTIES = [
   "border-top-right-radius",
   "border-bottom-right-radius",
   "border-bottom-left-radius",
-  "background",
   "background-color",
   "color",
   "font-family",
@@ -59,14 +58,28 @@ export function isAllowedStyleProperty(property: string): property is AllowedSty
   return ALLOWED_SET.has(property);
 }
 
-/** Reject empty / script-like values before browser apply. */
+/** Reject empty / script-like / breakout values before browser apply. */
 export function isSafeCssValue(value: string): boolean {
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > 256) {
     return false;
   }
-  // No url(), expression, or javascript: in preview values.
-  if (/url\s*\(|expression\s*\(|javascript:/i.test(trimmed)) {
+  // Block stylesheet breakout (`; { } \ @`) and C0/DEL control chars.
+  if (/[;{}\\@]/.test(trimmed)) {
+    return false;
+  }
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const code = trimmed.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) {
+      return false;
+    }
+  }
+  // No url(), expression, javascript:, image-set(), element(), attr(), or binding/behavior.
+  if (
+    /url\s*\(|expression\s*\(|javascript:|image-set\s*\(|element\s*\(|attr\s*\(|-moz-binding|behavior\s*:/i.test(
+      trimmed,
+    )
+  ) {
     return false;
   }
   return true;

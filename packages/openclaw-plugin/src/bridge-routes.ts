@@ -101,11 +101,44 @@ function extractBearerToken(req: IncomingMessage, url: URL): string | undefined 
       return token;
     }
   }
-  const queryToken = url.searchParams.get("token");
-  if (typeof queryToken === "string" && queryToken.trim().length > 0) {
-    return queryToken.trim();
+
+  const protocolHeader = req.headers["sec-websocket-protocol"];
+  if (typeof protocolHeader === "string") {
+    for (const part of protocolHeader.split(",")) {
+      const proto = part.trim();
+      if (proto.startsWith("ave-auth.")) {
+        const token = proto.slice("ave-auth.".length).trim();
+        if (token.length > 0) {
+          return token;
+        }
+      }
+    }
   }
+
+  // Loopback ?token= is an accepted local-gateway convenience (prefer Sec-WebSocket-Protocol
+  // ave-auth.* / Authorization Bearer in production). Token is only read when Host is loopback.
+  const hostHeader = req.headers.host;
+  const hostName =
+    typeof hostHeader === "string" ? hostHeader.split(":")[0]?.toLowerCase() ?? "" : "";
+  const isLoopbackHost = hostName === "127.0.0.1" || hostName === "localhost" || hostName === "[::1]";
+  if (isLoopbackHost) {
+    const queryToken = url.searchParams.get("token");
+    if (typeof queryToken === "string" && queryToken.trim().length > 0) {
+      return queryToken.trim();
+    }
+  }
+
   return undefined;
+}
+
+function selectAveAuthProtocol(protocols: Set<string> | string[]): string | false {
+  const list = Array.isArray(protocols) ? protocols : [...protocols];
+  for (const proto of list) {
+    if (proto.startsWith("ave-auth.")) {
+      return proto;
+    }
+  }
+  return false;
 }
 
 export type BridgeRouteContext = {
@@ -127,11 +160,18 @@ export type LiveBridgeSocket = {
 
 export class BridgeHub {
   private readonly sockets = new Map<string, Set<LiveBridgeSocket>>();
+  /** selectionId → owning connectionId (preview.apply unicast). */
+  private readonly selectionOwners = new Map<string, string>();
   /** Allow up to ~3 MiB JSON (2 MiB PNG + base64 overhead) for C-009. */
-  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
+  private readonly wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 3 * 1024 * 1024,
+    handleProtocols: selectAveAuthProtocol,
+  });
   private readonly pendingApplies = new Map<
     string,
     {
+      ownerConnectionId: string;
       resolve: (
         value:
           | { ok: true; applied: PreviewApplyResultMessage["applied"] }
@@ -147,6 +187,29 @@ export class BridgeHub {
 
   constructor(private readonly ctx: BridgeRouteContext) {}
 
+  rememberSelectionOwner(selectionId: string, connectionId: string): void {
+    this.selectionOwners.set(selectionId, connectionId);
+  }
+
+  forgetSelectionOwner(selectionId: string): void {
+    this.selectionOwners.delete(selectionId);
+  }
+
+  private sendToConnection(connectionId: string, payload: string): boolean {
+    const set = this.sockets.get(connectionId);
+    if (!set) {
+      return false;
+    }
+    let sent = false;
+    for (const live of set) {
+      if (live.socket.readyState === 1) {
+        live.socket.send(payload);
+        sent = true;
+      }
+    }
+    return sent;
+  }
+
   /** True when at least one live paired bridge socket is open. */
   hasLiveBrowser(): boolean {
     for (const set of this.sockets.values()) {
@@ -160,7 +223,7 @@ export class BridgeHub {
   }
 
   /**
-   * C-015: push preview.apply to paired browsers and await preview.apply.result.
+   * C-015: push preview.apply to the owning browser and await preview.apply.result.
    */
   requestPreviewApply(
     command: PreviewApplyCommand,
@@ -173,7 +236,15 @@ export class BridgeHub {
         message: string;
       }
   > {
-    if (!this.hasLiveBrowser()) {
+    const ownerId = this.selectionOwners.get(command.selectionId);
+    if (ownerId === undefined) {
+      return Promise.resolve({
+        ok: false,
+        code: "browser_unavailable",
+        message: "Kein Browser-Owner für diese Selektion",
+      });
+    }
+    if (!this.sendToConnection(ownerId, JSON.stringify(command))) {
       return Promise.resolve({
         ok: false,
         code: "browser_unavailable",
@@ -191,30 +262,15 @@ export class BridgeHub {
         });
       }, timeoutMs);
 
-      this.pendingApplies.set(command.requestId, { resolve, timer });
-      const payload = JSON.stringify(command);
-      let sent = false;
-      for (const set of this.sockets.values()) {
-        for (const live of set) {
-          if (live.socket.readyState === 1) {
-            live.socket.send(payload);
-            sent = true;
-          }
-        }
-      }
-      if (!sent) {
-        clearTimeout(timer);
-        this.pendingApplies.delete(command.requestId);
-        resolve({
-          ok: false,
-          code: "browser_unavailable",
-          message: "Kein gekoppelter Browser verfügbar",
-        });
-      }
+      this.pendingApplies.set(command.requestId, {
+        ownerConnectionId: ownerId,
+        resolve,
+        timer,
+      });
     });
   }
 
-  /** RISK-009: ask extension to disable agent preview stylesheet. */
+  /** RISK-009: ask owning extension to disable agent preview overrides. */
   clearPreview(selectionId?: string): void {
     const command: PreviewClearCommand = {
       type: "preview.clear",
@@ -223,6 +279,14 @@ export class BridgeHub {
       ...(selectionId !== undefined ? { selectionId } : {}),
     };
     const payload = JSON.stringify(command);
+    if (selectionId !== undefined) {
+      const ownerId = this.selectionOwners.get(selectionId);
+      if (ownerId === undefined) {
+        return;
+      }
+      this.sendToConnection(ownerId, payload);
+      return;
+    }
     for (const set of this.sockets.values()) {
       for (const live of set) {
         if (live.socket.readyState === 1) {
@@ -232,7 +296,11 @@ export class BridgeHub {
     }
   }
 
-  private resolvePendingApply(raw: unknown): boolean {
+  /**
+   * Resolve a pending preview.apply only when the sending connection owns it.
+   * Results from other sockets are ignored (spoof protection).
+   */
+  private resolvePendingApply(raw: unknown, connectionId: string): boolean {
     if (typeof raw !== "object" || raw === null) {
       return false;
     }
@@ -243,6 +311,9 @@ export class BridgeHub {
     }
     const pending = this.pendingApplies.get(requestId);
     if (!pending) {
+      return false;
+    }
+    if (connectionId !== pending.ownerConnectionId) {
       return false;
     }
 
@@ -362,12 +433,25 @@ export class BridgeHub {
       return true;
     }
 
-    // Accept either full C-002 envelope or shorthand { code, extensionInstanceId, ... }.
+    // Whitelist pairing.complete fields only (ignore unknown keys).
     let normalized: unknown = body;
-    if (typeof body === "object" && body !== null && !("type" in body)) {
-      const record: JsonBody = { type: "pairing.complete", protocolVersion: PROTOCOL_VERSION };
-      for (const [key, value] of Object.entries(body)) {
-        record[key] = value;
+    if (typeof body === "object" && body !== null) {
+      const source = body as Record<string, unknown>;
+      const record: JsonBody = {
+        type: "pairing.complete",
+        protocolVersion:
+          typeof source.protocolVersion === "number"
+            ? source.protocolVersion
+            : PROTOCOL_VERSION,
+      };
+      if (typeof source.code === "string") {
+        record.code = source.code;
+      }
+      if (typeof source.extensionInstanceId === "string") {
+        record.extensionInstanceId = source.extensionInstanceId;
+      }
+      if (typeof source.extensionLabel === "string") {
+        record.extensionLabel = source.extensionLabel;
       }
       normalized = record;
     }
@@ -431,6 +515,12 @@ export class BridgeHub {
       sessions: this.ctx.sessions,
       connection,
       onBatchChanged: this.ctx.onBatchChanged,
+      onSelectionCreated: (selectionId) => {
+        this.rememberSelectionOwner(selectionId, connection.connectionId);
+      },
+      onSelectionRemoved: (selectionId) => {
+        this.forgetSelectionOwner(selectionId);
+      },
       ...(this.ctx.sourceResolver !== undefined
         ? { sourceResolver: this.ctx.sourceResolver }
         : {}),
@@ -487,7 +577,7 @@ export class BridgeHub {
         );
         return;
       }
-      if (this.resolvePendingApply(raw)) {
+      if (this.resolvePendingApply(raw, connection.connectionId)) {
         return;
       }
       void handler.handleRaw(raw).then((result) => {
@@ -500,6 +590,11 @@ export class BridgeHub {
       set?.delete(live);
       if (set && set.size === 0) {
         this.sockets.delete(connection.connectionId);
+        for (const [selectionId, ownerId] of this.selectionOwners) {
+          if (ownerId === connection.connectionId) {
+            this.selectionOwners.delete(selectionId);
+          }
+        }
       }
     });
 

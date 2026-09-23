@@ -20,5 +20,6 @@ export {
 export { createPageStatusStore, type PageStatusStore } from "./page-status.js";
 export { createMemoryLookup } from "./memory-lookup.js";
 export { createHttpRelayLookup, DEFAULT_RELAY_HEALTH_TIMEOUT_MS } from "./http-lookup.js";
+export { validateDomscribeRelayUrl, type RelayUrlValidation } from "./relay-url.js";
 export { createSourceResolver } from "./resolver.js";
 export { DOMSCRIBE_FIXTURE_ENTRIES, fixtureLookup } from "./fixture.js";

@@ -285,4 +285,52 @@ describe("T-026 closed-loop apply_preview + mark_resolved", () => {
     assert.equal(second.ok, true);
     assert.equal(calls, 1);
   });
+
+  it("same requestId in different sessions does not collide", async () => {
+    const store = new VisualBatchStore();
+    const selA = admitSelection(store, "agent-1", "session-a");
+    const selB = admitSelection(store, "agent-1", "session-b");
+    let calls = 0;
+    const browser: BrowserPreviewApplier = {
+      hasBrowser: () => true,
+      apply: async () => {
+        calls += 1;
+        return {
+          ok: true,
+          applied: [{ property: "padding", value: "8px" }],
+        };
+      },
+    };
+    const first = await runApplyPreview({
+      enabled: true,
+      store,
+      agentId: "agent-1",
+      sessionKey: "session-a",
+      browser,
+      input: {
+        selectionId: selA.id,
+        styles: [{ property: "padding", value: "8px" }],
+        requestId: "shared-req",
+      },
+    });
+    const second = await runApplyPreview({
+      enabled: true,
+      store,
+      agentId: "agent-1",
+      sessionKey: "session-b",
+      browser,
+      input: {
+        selectionId: selB.id,
+        styles: [{ property: "padding", value: "8px" }],
+        requestId: "shared-req",
+      },
+    });
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.equal(calls, 2);
+    if (first.ok && second.ok) {
+      assert.equal(first.selectionId, selA.id);
+      assert.equal(second.selectionId, selB.id);
+    }
+  });
 });

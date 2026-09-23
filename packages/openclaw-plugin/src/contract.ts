@@ -522,21 +522,24 @@ export const contract = defineFeatureContract({
         },
         { additionalProperties: false },
       ),
-      output: Type.Object(
-        {
-          ok: Type.Literal(true),
-          revision: Type.Integer({ minimum: 0 }),
-          status: Type.Union([
-            Type.Literal("active"),
-            Type.Literal("none"),
-            Type.Literal("ambiguous"),
-          ]),
-          sessionKey: Type.Union([Type.String(), Type.Null()]),
-          agentId: Type.Union([Type.String(), Type.Null()]),
-          title: Type.Union([Type.String(), Type.Null()]),
-        },
-        { additionalProperties: false },
-      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            revision: Type.Integer({ minimum: 0 }),
+            status: Type.Union([
+              Type.Literal("active"),
+              Type.Literal("none"),
+              Type.Literal("ambiguous"),
+            ]),
+            sessionKey: Type.Union([Type.String(), Type.Null()]),
+            agentId: Type.Union([Type.String(), Type.Null()]),
+            title: Type.Union([Type.String(), Type.Null()]),
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
     },
     get_health: {
       kind: "query",
@@ -561,6 +564,7 @@ export const contract = defineFeatureContract({
             Type.Literal("error"),
           ]),
           protocolVersion: Type.Integer(),
+          previewEditingEnabled: Type.Boolean(),
         },
         { additionalProperties: false },
       ),

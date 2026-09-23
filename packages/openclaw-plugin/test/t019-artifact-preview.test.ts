@@ -204,6 +204,45 @@ describe("T-019 / C-009 artifact + preview changes", () => {
     assert.equal(sel?.changes[0]?.newValue, "16px");
   });
 
+  it("rejects selection.update style changes outside allowlist", async () => {
+    const { handler, selectionId } = await pairedHandler();
+    const bad = await handler.handleRaw({
+      type: "selection.update",
+      protocolVersion: 1,
+      requestId: "req-style-bad",
+      selectionId,
+      change: {
+        id: "chg_bad",
+        kind: "style",
+        property: "position",
+        newValue: "fixed",
+        status: "pending",
+      },
+    });
+    assert.equal(bad.ok, false);
+    if (!bad.ok) {
+      assert.equal(bad.code, "forbidden_property");
+    }
+
+    const breakout = await handler.handleRaw({
+      type: "selection.update",
+      protocolVersion: 1,
+      requestId: "req-style-breakout",
+      selectionId,
+      change: {
+        id: "chg_break",
+        kind: "style",
+        property: "color",
+        newValue: "red; } * { display: none",
+        status: "pending",
+      },
+    });
+    assert.equal(breakout.ok, false);
+    if (!breakout.ok) {
+      assert.equal(breakout.code, "forbidden_property");
+    }
+  });
+
   it("forbids artifact.upload when previewEditingEnabled=false", async () => {
     const { handler, selectionId } = await pairedHandler({ previewEditingEnabled: false });
     const png = tinyPngBuffer();

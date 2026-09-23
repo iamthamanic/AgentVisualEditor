@@ -83,8 +83,10 @@ export function handlePreviewMessage(message: PreviewMessage): PreviewResult {
     }
     if (message.oldValue === "") {
       el.style.removeProperty(message.property);
-    } else {
+    } else if (isSafeCssValue(message.oldValue)) {
       el.style.setProperty(message.property, message.oldValue);
+    } else {
+      el.style.removeProperty(message.property);
     }
     return { ok: true };
   }
@@ -105,8 +107,10 @@ export function handlePreviewMessage(message: PreviewMessage): PreviewResult {
     if (!isAllowedStyleProperty(style.property)) continue;
     if (style.oldValue === "") {
       el.style.removeProperty(style.property);
-    } else {
+    } else if (isSafeCssValue(style.oldValue)) {
       el.style.setProperty(style.property, style.oldValue);
+    } else {
+      el.style.removeProperty(style.property);
     }
   }
   if (message.textOldValue !== undefined) {
