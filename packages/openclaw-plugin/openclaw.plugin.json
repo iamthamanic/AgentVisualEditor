@@ -25,6 +25,16 @@
       "domscribeRelayUrl": {
         "type": "string",
         "description": "Optional Domscribe relay base URL (http://127.0.0.1:PORT)."
+      },
+      "previewEditingEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable Design-tab preview editing and artifact.upload (SLC-5)."
+      },
+      "agentPreviewApplyEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable agent apply_preview tool (C-015). Default false until security tests pass."
       }
     }
   },
@@ -32,19 +42,24 @@
     "onStartup": true
   },
   "controlUi": {
-    "entry": "dist/control-ui/50e2f0435d26aeb3bb4b9d690447735b12a768db8e957d7287878addc8f8ed4f/index.js",
+    "entry": "dist/control-ui/cd5802559c4585ae4736db1b78e7fed4dbf0025b68e2e1a5d1262c21aa16763a/index.js",
     "styles": [
-      "dist/control-ui/50e2f0435d26aeb3bb4b9d690447735b12a768db8e957d7287878addc8f8ed4f/index.css"
+      "dist/control-ui/cd5802559c4585ae4736db1b78e7fed4dbf0025b68e2e1a5d1262c21aa16763a/index.css"
     ]
   },
   "contracts": {
     "tools": [
+      "agent_visual_editor.apply_preview",
       "agent_visual_editor.get_active_context",
       "agent_visual_editor.get_screenshot",
-      "agent_visual_editor.get_selection"
+      "agent_visual_editor.get_selection",
+      "agent_visual_editor.mark_resolved"
     ]
   },
   "toolMetadata": {
+    "agent_visual_editor.apply_preview": {
+      "optional": true
+    },
     "agent_visual_editor.get_screenshot": {
       "optional": true
     }

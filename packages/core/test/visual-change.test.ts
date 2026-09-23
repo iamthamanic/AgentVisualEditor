@@ -7,9 +7,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   createVisualChange,
+  markChangeResolved,
   markChangeStatus,
   pendingChanges,
   revertAllPending,
+  upsertStylePreviewChange,
   upsertVisualChange,
 } from "../dist/visual-change.js";
 
@@ -34,5 +36,40 @@ describe("VisualChange helpers", () => {
     list = revertAllPending(list);
     assert.equal(pendingChanges(list).length, 0);
     assert.equal(list.every((c) => c.status === "reverted"), true);
+  });
+
+  it("markChangeResolved is idempotent (C-016)", () => {
+    const a = createVisualChange({
+      kind: "style",
+      property: "color",
+      oldValue: "#000",
+      newValue: "#111",
+    });
+    let list = upsertVisualChange([], a);
+    const once = markChangeResolved(list, a.id);
+    assert.ok(once);
+    assert.equal(once?.[0]?.status, "resolved");
+    const twice = markChangeResolved(once ?? [], a.id);
+    assert.ok(twice);
+    assert.equal(twice?.[0]?.status, "resolved");
+    assert.equal(markChangeResolved(list, "missing"), undefined);
+  });
+
+  it("upsertStylePreviewChange latest wins by property", () => {
+    let list = upsertStylePreviewChange([], {
+      property: "padding",
+      oldValue: "0",
+      newValue: "4px",
+    });
+    const firstId = list[0]?.id;
+    list = upsertStylePreviewChange(list, {
+      property: "padding",
+      oldValue: "0",
+      newValue: "8px",
+    });
+    assert.equal(list.length, 1);
+    assert.equal(list[0]?.id, firstId);
+    assert.equal(list[0]?.newValue, "8px");
+    assert.equal(list[0]?.status, "pending");
   });
 });

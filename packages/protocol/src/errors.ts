@@ -19,6 +19,8 @@ export const ERROR_CODES = [
   "invalid_code",
   "expired_code",
   "rate_limited",
+  "forbidden_property",
+  "browser_unavailable",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

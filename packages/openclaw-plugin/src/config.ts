@@ -1,5 +1,5 @@
 /**
- * Plugin config flags (composer UI, debug selection, Domscribe, preview editing).
+ * Plugin config flags (composer UI, debug selection, Domscribe, preview editing, agent apply).
  * Location: packages/openclaw-plugin/src/config.ts
  */
 
@@ -12,6 +12,10 @@ export type AvePluginConfig = {
   domscribeRelayUrl: string | null;
   /** Design-tab / C-009 / VisualChange updates (SLC-5). */
   previewEditingEnabled: boolean;
+  /**
+   * C-015 agent apply_preview (SLC-6). Default false until security tests pass (§19).
+   */
+  agentPreviewApplyEnabled: boolean;
 };
 
 export const DEFAULT_AVE_CONFIG: AvePluginConfig = {
@@ -20,6 +24,7 @@ export const DEFAULT_AVE_CONFIG: AvePluginConfig = {
   domscribeEnabled: true,
   domscribeRelayUrl: null,
   previewEditingEnabled: true,
+  agentPreviewApplyEnabled: false,
 };
 
 export function readAveConfig(raw: Record<string, unknown> | undefined): AvePluginConfig {
@@ -28,6 +33,7 @@ export function readAveConfig(raw: Record<string, unknown> | undefined): AvePlug
   const domscribeEnabled = raw?.domscribeEnabled;
   const domscribeRelayUrl = raw?.domscribeRelayUrl;
   const previewEditingEnabled = raw?.previewEditingEnabled;
+  const agentPreviewApplyEnabled = raw?.agentPreviewApplyEnabled;
   return {
     composerUiEnabled: typeof composerUiEnabled === "boolean" ? composerUiEnabled : DEFAULT_AVE_CONFIG.composerUiEnabled,
     testSelectionEnabled:
@@ -41,5 +47,9 @@ export function readAveConfig(raw: Record<string, unknown> | undefined): AvePlug
       typeof previewEditingEnabled === "boolean"
         ? previewEditingEnabled
         : DEFAULT_AVE_CONFIG.previewEditingEnabled,
+    agentPreviewApplyEnabled:
+      typeof agentPreviewApplyEnabled === "boolean"
+        ? agentPreviewApplyEnabled
+        : DEFAULT_AVE_CONFIG.agentPreviewApplyEnabled,
   };
 }

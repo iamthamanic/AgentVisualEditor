@@ -82,6 +82,21 @@ describe("protocol parseInbound", () => {
     assert.equal(result.ok, true);
   });
 
+  it("accepts preview.apply.result (C-015)", () => {
+    const result = parseInbound({
+      type: "preview.apply.result",
+      protocolVersion: 1,
+      requestId: "apply_1",
+      selectionId: "ave_sel_1",
+      ok: true,
+      applied: [{ property: "padding", value: "8px", oldValue: "0px" }],
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.message.type, "preview.apply.result");
+    }
+  });
+
   it("rejects invalid messages with ErrorEnvelope", () => {
     const result = parseInbound({ type: "selection.create" });
     assert.equal(result.ok, false);

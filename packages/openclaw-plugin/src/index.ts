@@ -7,6 +7,7 @@
  * SLC-3: prepare_send/send_outcome + next-turn injection + agent tools.
  * SLC-4: Domscribe SourceResolver on selection path (degraded when absent).
  * SLC-5: preview VisualChange + artifact.upload / get_screenshot.
+ * SLC-6: apply_preview + mark_resolved (agentPreviewApplyEnabled default false).
  */
 
 import { defineFeaturePlugin, type FeatureInvocationContext } from "openclaw/plugin-sdk/feature-plugin";
@@ -33,6 +34,7 @@ import { toBatchDto, type BatchDto } from "./project-batch.js";
 import { bindSessionIdentity } from "./session-binding.js";
 import { VisualBatchStore } from "./store.js";
 import { toActiveContextDto, toSelectionDetailDto } from "./tool-payloads.js";
+import { runApplyPreview, type BrowserPreviewApplier } from "./preview-apply.js";
 
 const SESSION_EXT_NAMESPACE = "visualBatch";
 
@@ -66,7 +68,10 @@ type OpErrorCode =
   | "stale_preparation"
   | "unavailable_context"
   | "no_context"
-  | "expired";
+  | "expired"
+  | "forbidden_property"
+  | "browser_unavailable"
+  | "stale";
 
 type OpError = {
   ok: false;
@@ -464,11 +469,76 @@ const plugin = defineFeaturePlugin({
         };
       },
 
+      async apply_preview(input, context) {
+        const binding = resolveToolBinding(context);
+        if (!binding.ok) {
+          return opError(binding.code, binding.message);
+        }
+        const browser: BrowserPreviewApplier = {
+          hasBrowser: () => bridgeHub?.hasLiveBrowser() ?? false,
+          apply: async (command) => {
+            if (!bridgeHub) {
+              return {
+                ok: false,
+                code: "browser_unavailable",
+                message: "Kein gekoppelter Browser verfügbar",
+              };
+            }
+            return bridgeHub.requestPreviewApply(command);
+          },
+        };
+        const result = await runApplyPreview({
+          enabled: config.agentPreviewApplyEnabled,
+          store,
+          agentId: binding.identity.agentId,
+          sessionKey: binding.identity.sessionKey,
+          browser,
+          input: {
+            selectionId: input.selectionId,
+            styles: input.styles,
+            ...(input.requestId !== undefined ? { requestId: input.requestId } : {}),
+          },
+        });
+        if (!result.ok) {
+          return opError(result.code, result.message);
+        }
+        emitChanged(binding.identity.agentId, binding.identity.sessionKey);
+        return result;
+      },
+
+      mark_resolved(input, context) {
+        const binding = resolveToolBinding(context);
+        if (!binding.ok) {
+          return opError(binding.code, binding.message);
+        }
+        if (input.changeId === undefined && input.selectionId === undefined) {
+          return opError("not_found", "changeId oder selectionId erforderlich");
+        }
+        const result = store.markResolved(
+          binding.identity.agentId,
+          binding.identity.sessionKey,
+          {
+            ...(input.changeId !== undefined ? { changeId: input.changeId } : {}),
+            ...(input.selectionId !== undefined ? { selectionId: input.selectionId } : {}),
+          },
+        );
+        if (!result.ok) {
+          return opError(result.code, result.message);
+        }
+        emitChanged(binding.identity.agentId, binding.identity.sessionKey);
+        return {
+          ok: true as const,
+          updatedChangeIds: result.updatedChangeIds,
+          note: result.note,
+        };
+      },
+
       get_ui_flags() {
         return {
           composerUiEnabled: config.composerUiEnabled,
           testSelectionEnabled: config.testSelectionEnabled,
           previewEditingEnabled: config.previewEditingEnabled,
+          agentPreviewApplyEnabled: config.agentPreviewApplyEnabled,
         };
       },
 
@@ -560,6 +630,17 @@ const aveConfigSchema = buildJsonPluginConfigSchema({
       type: "string",
       description: "Optional Domscribe relay base URL (http://127.0.0.1:PORT).",
     },
+    previewEditingEnabled: {
+      type: "boolean",
+      default: true,
+      description: "Enable Design-tab preview editing and artifact.upload (SLC-5).",
+    },
+    agentPreviewApplyEnabled: {
+      type: "boolean",
+      default: false,
+      description:
+        "Enable agent apply_preview tool (C-015). Default false until security tests pass.",
+    },
   },
 });
 
@@ -597,6 +678,17 @@ for (const symbol of Object.getOwnPropertySymbols(plugin)) {
           type: "string",
           description: "Optional Domscribe relay base URL (http://127.0.0.1:PORT).",
         },
+        previewEditingEnabled: {
+          type: "boolean",
+          default: true,
+          description: "Enable Design-tab preview editing and artifact.upload (SLC-5).",
+        },
+        agentPreviewApplyEnabled: {
+          type: "boolean",
+          default: false,
+          description:
+            "Enable agent apply_preview tool (C-015). Default false until security tests pass.",
+        },
       },
     });
   }
@@ -613,4 +705,5 @@ export { PairingStore, BRIDGE_PATH, PAIRING_COMPLETE_PATH } from "./pairing.js";
 export { ActiveSessionTracker } from "./active-session.js";
 export { BridgeMessageHandler } from "./bridge-handler.js";
 export { toActiveContextDto, toSelectionDetailDto } from "./tool-payloads.js";
+export { runApplyPreview, clearApplyPreviewDedupeForTests } from "./preview-apply.js";
 export { buildCompactNextTurnContext } from "@agent-visual-editor/core";

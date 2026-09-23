@@ -152,6 +152,73 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
       }
       broadcastStatus();
     },
+    onPreviewApply: (command) => {
+      void (async () => {
+        try {
+          const raw = await sendToActiveTab({
+            type: "agent_preview_apply",
+            selectionId: command.selectionId,
+            selector: command.selector,
+            styles: command.styles,
+          });
+          if (!isRecord(raw) || raw.ok !== true || !Array.isArray(raw.applied)) {
+            const code =
+              isRecord(raw) && (raw.code === "stale" || raw.code === "forbidden_property")
+                ? raw.code
+                : "stale";
+            const message =
+              isRecord(raw) && typeof raw.message === "string"
+                ? raw.message
+                : "Preview-Apply fehlgeschlagen";
+            bridge?.sendPreviewApplyError({
+              requestId: command.requestId,
+              code,
+              message,
+            });
+            return;
+          }
+          const applied: Array<{ property: string; value: string; oldValue?: string }> = [];
+          for (const item of raw.applied) {
+            if (!isRecord(item)) continue;
+            if (typeof item.property !== "string" || typeof item.value !== "string") continue;
+            const row: { property: string; value: string; oldValue?: string } = {
+              property: item.property,
+              value: item.value,
+            };
+            if (typeof item.oldValue === "string") {
+              row.oldValue = item.oldValue;
+            }
+            applied.push(row);
+          }
+          bridge?.sendPreviewApplyResult({
+            requestId: command.requestId,
+            selectionId: command.selectionId,
+            applied,
+          });
+        } catch (error) {
+          bridge?.sendPreviewApplyError({
+            requestId: command.requestId,
+            code: "browser_unavailable",
+            message: error instanceof Error ? error.message : "Browser-Tab nicht erreichbar",
+          });
+        }
+      })();
+    },
+    onPreviewClear: (command) => {
+      void (async () => {
+        try {
+          const payload: { type: "agent_preview_clear"; selectionId?: string } = {
+            type: "agent_preview_clear",
+          };
+          if (command.selectionId !== undefined) {
+            payload.selectionId = command.selectionId;
+          }
+          await sendToActiveTab(payload);
+        } catch {
+          // Best-effort clear for HMR verify (RISK-009).
+        }
+      })();
+    },
   });
   bridge.start();
 }

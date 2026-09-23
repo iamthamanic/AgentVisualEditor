@@ -23,6 +23,15 @@ export type BridgeClientCallbacks = {
     message?: string;
     sourceFreshness?: string;
   }) => void;
+  /** C-015 agent preview.apply from plugin. */
+  onPreviewApply?: (command: {
+    requestId: string;
+    selectionId: string;
+    selector: string;
+    styles: Array<{ property: string; value: string }>;
+  }) => void;
+  /** RISK-009 preview.clear from plugin. */
+  onPreviewClear?: (command: { requestId: string; selectionId?: string }) => void;
 };
 
 function toWsUrl(gatewayBaseUrl: string, bridgePath: string, token: string): string {
@@ -211,6 +220,46 @@ export class BridgeClient {
     this.socket.send(JSON.stringify(msg));
   }
 
+  /** C-015: ack agent preview apply back to plugin. */
+  sendPreviewApplyResult(input: {
+    requestId: string;
+    selectionId: string;
+    applied: Array<{ property: string; value: string; oldValue?: string }>;
+  }): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      this.callbacks.onError("Bridge nicht verbunden");
+      return;
+    }
+    this.socket.send(
+      JSON.stringify({
+        type: "preview.apply.result",
+        protocolVersion: PROTOCOL_VERSION,
+        requestId: input.requestId,
+        selectionId: input.selectionId,
+        ok: true,
+        applied: input.applied,
+      }),
+    );
+  }
+
+  sendPreviewApplyError(input: {
+    requestId: string;
+    code: "stale" | "forbidden_property" | "browser_unavailable";
+    message: string;
+  }): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    this.socket.send(
+      JSON.stringify({
+        ok: false,
+        code: input.code,
+        message: input.message,
+        requestId: input.requestId,
+      }),
+    );
+  }
+
   private connect(): void {
     if (this.stopped) return;
     try {
@@ -295,6 +344,36 @@ export class BridgeClient {
         revision: typeof msg.revision === "number" ? msg.revision : 0,
       };
       this.callbacks.onSession(chat);
+      return;
+    }
+
+    if (msg.type === "preview.apply") {
+      const requestId = typeof msg.requestId === "string" ? msg.requestId : "";
+      const selectionId = typeof msg.selectionId === "string" ? msg.selectionId : "";
+      const selector = typeof msg.selector === "string" ? msg.selector : "";
+      const stylesRaw = msg.styles;
+      const styles: Array<{ property: string; value: string }> = [];
+      if (Array.isArray(stylesRaw)) {
+        for (const item of stylesRaw) {
+          if (!isRecord(item)) continue;
+          if (typeof item.property !== "string" || typeof item.value !== "string") continue;
+          styles.push({ property: item.property, value: item.value });
+        }
+      }
+      if (requestId && selectionId && selector && styles.length > 0) {
+        this.callbacks.onPreviewApply?.({ requestId, selectionId, selector, styles });
+      }
+      return;
+    }
+
+    if (msg.type === "preview.clear") {
+      const requestId = typeof msg.requestId === "string" ? msg.requestId : "";
+      if (!requestId) return;
+      const command: { requestId: string; selectionId?: string } = { requestId };
+      if (typeof msg.selectionId === "string") {
+        command.selectionId = msg.selectionId;
+      }
+      this.callbacks.onPreviewClear?.(command);
       return;
     }
 

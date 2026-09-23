@@ -85,3 +85,54 @@ export function revertAllPending(changes: readonly VisualChange[]): VisualChange
 export function pendingChanges(changes: readonly VisualChange[]): VisualChange[] {
   return changes.filter((c) => c.status === "pending" || c.status === "in_progress");
 }
+
+/**
+ * Mark one change resolved (idempotent). Returns undefined when changeId is absent.
+ * BR-008: resolved means source/agent addressed the change — not an extension source write.
+ */
+export function markChangeResolved(
+  changes: readonly VisualChange[],
+  changeId: string,
+): VisualChange[] | undefined {
+  const idx = changes.findIndex((c) => c.id === changeId);
+  if (idx < 0) {
+    return undefined;
+  }
+  return changes.map((c) => (c.id === changeId ? { ...c, status: "resolved" as const } : c));
+}
+
+/** Mark all changes on a selection resolved (idempotent). */
+export function markAllChangesResolved(changes: readonly VisualChange[]): VisualChange[] {
+  return changes.map((c) =>
+    c.status === "resolved" ? c : { ...c, status: "resolved" as const },
+  );
+}
+
+/**
+ * Upsert a style preview change by property (latest explicit value wins).
+ * Reuses an existing pending/in_progress style change id for the same property.
+ */
+export function upsertStylePreviewChange(
+  changes: readonly VisualChange[],
+  input: { property: string; oldValue?: string; newValue: string },
+): VisualChange[] {
+  const existing = changes.find(
+    (c) =>
+      c.kind === "style" &&
+      c.property === input.property &&
+      (c.status === "pending" || c.status === "in_progress"),
+  );
+  const next = createVisualChange({
+    ...(existing !== undefined ? { id: existing.id } : {}),
+    kind: "style",
+    property: input.property,
+    ...(input.oldValue !== undefined
+      ? { oldValue: input.oldValue }
+      : existing?.oldValue !== undefined
+        ? { oldValue: existing.oldValue }
+        : {}),
+    newValue: input.newValue,
+    status: "pending",
+  });
+  return upsertVisualChange(changes, next);
+}
