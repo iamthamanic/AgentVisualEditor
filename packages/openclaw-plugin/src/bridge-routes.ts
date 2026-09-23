@@ -17,6 +17,9 @@ import {
   parsePairingComplete,
   type ActiveSessionChanged,
   type ErrorEnvelope,
+  type PreviewApplyCommand,
+  type PreviewApplyResultMessage,
+  type PreviewClearCommand,
 } from "@agent-visual-editor/protocol";
 import type { SourceResolver } from "@agent-visual-editor/domscribe-adapter";
 import type { ActiveSessionTracker } from "./active-session.js";
@@ -126,8 +129,171 @@ export class BridgeHub {
   private readonly sockets = new Map<string, Set<LiveBridgeSocket>>();
   /** Allow up to ~3 MiB JSON (2 MiB PNG + base64 overhead) for C-009. */
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
+  private readonly pendingApplies = new Map<
+    string,
+    {
+      resolve: (
+        value:
+          | { ok: true; applied: PreviewApplyResultMessage["applied"] }
+          | {
+              ok: false;
+              code: "stale" | "browser_unavailable" | "forbidden_property";
+              message: string;
+            },
+      ) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
 
   constructor(private readonly ctx: BridgeRouteContext) {}
+
+  /** True when at least one live paired bridge socket is open. */
+  hasLiveBrowser(): boolean {
+    for (const set of this.sockets.values()) {
+      for (const live of set) {
+        if (live.socket.readyState === 1) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * C-015: push preview.apply to paired browsers and await preview.apply.result.
+   */
+  requestPreviewApply(
+    command: PreviewApplyCommand,
+    timeoutMs = 8_000,
+  ): Promise<
+    | { ok: true; applied: PreviewApplyResultMessage["applied"] }
+    | {
+        ok: false;
+        code: "stale" | "browser_unavailable" | "forbidden_property";
+        message: string;
+      }
+  > {
+    if (!this.hasLiveBrowser()) {
+      return Promise.resolve({
+        ok: false,
+        code: "browser_unavailable",
+        message: "Kein gekoppelter Browser verfügbar",
+      });
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingApplies.delete(command.requestId);
+        resolve({
+          ok: false,
+          code: "browser_unavailable",
+          message: "Browser-Antwort Timeout",
+        });
+      }, timeoutMs);
+
+      this.pendingApplies.set(command.requestId, { resolve, timer });
+      const payload = JSON.stringify(command);
+      let sent = false;
+      for (const set of this.sockets.values()) {
+        for (const live of set) {
+          if (live.socket.readyState === 1) {
+            live.socket.send(payload);
+            sent = true;
+          }
+        }
+      }
+      if (!sent) {
+        clearTimeout(timer);
+        this.pendingApplies.delete(command.requestId);
+        resolve({
+          ok: false,
+          code: "browser_unavailable",
+          message: "Kein gekoppelter Browser verfügbar",
+        });
+      }
+    });
+  }
+
+  /** RISK-009: ask extension to disable agent preview stylesheet. */
+  clearPreview(selectionId?: string): void {
+    const command: PreviewClearCommand = {
+      type: "preview.clear",
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: `clr_${crypto.randomUUID().replace(/-/g, "")}`,
+      ...(selectionId !== undefined ? { selectionId } : {}),
+    };
+    const payload = JSON.stringify(command);
+    for (const set of this.sockets.values()) {
+      for (const live of set) {
+        if (live.socket.readyState === 1) {
+          live.socket.send(payload);
+        }
+      }
+    }
+  }
+
+  private resolvePendingApply(raw: unknown): boolean {
+    if (typeof raw !== "object" || raw === null) {
+      return false;
+    }
+    const requestId =
+      "requestId" in raw && typeof raw.requestId === "string" ? raw.requestId : undefined;
+    if (requestId === undefined) {
+      return false;
+    }
+    const pending = this.pendingApplies.get(requestId);
+    if (!pending) {
+      return false;
+    }
+
+    const type = "type" in raw && typeof raw.type === "string" ? raw.type : undefined;
+    const ok = "ok" in raw ? raw.ok : undefined;
+
+    if (type === "preview.apply.result" && ok === true) {
+      clearTimeout(pending.timer);
+      this.pendingApplies.delete(requestId);
+      const applied: PreviewApplyResultMessage["applied"] = [];
+      const appliedRaw = "applied" in raw ? raw.applied : undefined;
+      if (Array.isArray(appliedRaw)) {
+        for (const item of appliedRaw) {
+          if (typeof item !== "object" || item === null) continue;
+          const property =
+            "property" in item && typeof item.property === "string" ? item.property : undefined;
+          const value = "value" in item && typeof item.value === "string" ? item.value : undefined;
+          if (property === undefined || value === undefined) continue;
+          const entry: { property: string; value: string; oldValue?: string } = {
+            property,
+            value,
+          };
+          if ("oldValue" in item && typeof item.oldValue === "string") {
+            entry.oldValue = item.oldValue;
+          }
+          applied.push(entry);
+        }
+      }
+      pending.resolve({ ok: true, applied });
+      return true;
+    }
+
+    if (ok === false && "code" in raw && typeof raw.code === "string") {
+      const code = raw.code;
+      if (code === "stale" || code === "browser_unavailable" || code === "forbidden_property") {
+        clearTimeout(pending.timer);
+        this.pendingApplies.delete(requestId);
+        pending.resolve({
+          ok: false,
+          code,
+          message:
+            "message" in raw && typeof raw.message === "string"
+              ? raw.message
+              : "Preview-Apply fehlgeschlagen",
+        });
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   registerRoutes(): void {
     this.ctx.api.registerHttpRoute({
@@ -319,6 +485,9 @@ export class BridgeHub {
             message: "JSON erwartet",
           } satisfies ErrorEnvelope),
         );
+        return;
+      }
+      if (this.resolvePendingApply(raw)) {
         return;
       }
       void handler.handleRaw(raw).then((result) => {

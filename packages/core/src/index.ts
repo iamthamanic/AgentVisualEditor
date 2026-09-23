@@ -12,3 +12,4 @@ export * from "./selection.js";
 export * from "./batch.js";
 export * from "./compact-context.js";
 export * from "./visual-change.js";
+export * from "./allowed-styles.js";

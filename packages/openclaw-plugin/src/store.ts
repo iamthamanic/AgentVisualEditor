@@ -13,12 +13,16 @@ import {
   buildCompactNextTurnContext,
   clearVisualBatch,
   createVisualBatch,
+  markAllChangesResolved,
+  markChangeResolved,
   prepareSend,
   rejectSend,
   removeSelection,
   sessionStoreKey,
+  upsertStylePreviewChange,
   type SelectionDraftInput,
   type VisualBatch,
+  type VisualChange,
   type VisualSelection,
 } from "@agent-visual-editor/core";
 
@@ -448,5 +452,172 @@ export class VisualBatchStore {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Locate the mutable active-context batch (working preparing/sent or admitted archive).
+   */
+  private locateActiveContext(
+    agentId: string,
+    sessionKey: string,
+  ): { batch: VisualBatch; kind: "working" | "admitted" } | undefined {
+    const current = this.get(agentId, sessionKey);
+    if (current && (current.state === "preparing" || current.state === "sent") && current.selections.length > 0) {
+      return { batch: current, kind: "working" };
+    }
+    const admitted = this.getAdmitted(agentId, sessionKey);
+    if (admitted && admitted.selections.length > 0) {
+      return { batch: admitted, kind: "admitted" };
+    }
+    return undefined;
+  }
+
+  private writeActiveContext(
+    agentId: string,
+    sessionKey: string,
+    kind: "working" | "admitted",
+    batch: VisualBatch,
+  ): void {
+    const key = this.key(agentId, sessionKey);
+    if (kind === "admitted") {
+      this.admittedBySession.set(key, batch);
+    } else {
+      this.batches.set(key, batch);
+    }
+  }
+
+  /**
+   * C-015: record applied preview styles on the active-context selection.
+   * Latest explicit value wins per CSS property.
+   */
+  recordPreviewApply(
+    agentId: string,
+    sessionKey: string,
+    selectionId: string,
+    applied: Array<{ property: string; value: string; oldValue?: string }>,
+  ):
+    | { ok: true; batch: VisualBatch; selection: VisualSelection; revision: number; changes: VisualChange[] }
+    | { ok: false; code: "not_found"; message: string } {
+    const located = this.locateActiveContext(agentId, sessionKey);
+    if (!located) {
+      return { ok: false, code: "not_found", message: "Selektion nicht gefunden" };
+    }
+    const index = located.batch.selections.findIndex((s) => s.id === selectionId);
+    if (index < 0) {
+      return { ok: false, code: "not_found", message: "Selektion nicht gefunden" };
+    }
+    const selection = located.batch.selections[index];
+    if (!selection) {
+      return { ok: false, code: "not_found", message: "Selektion nicht gefunden" };
+    }
+    let changes = [...selection.changes];
+    for (const item of applied) {
+      changes = upsertStylePreviewChange(changes, {
+        property: item.property,
+        newValue: item.value,
+        ...(item.oldValue !== undefined ? { oldValue: item.oldValue } : {}),
+      });
+    }
+    const nextSelection: VisualSelection = { ...selection, changes };
+    const selections = [...located.batch.selections];
+    selections[index] = nextSelection;
+    const batch: VisualBatch = {
+      ...located.batch,
+      selections,
+      revision: located.batch.revision + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    this.writeActiveContext(agentId, sessionKey, located.kind, batch);
+    return {
+      ok: true,
+      batch,
+      selection: nextSelection,
+      revision: batch.revision,
+      changes: nextSelection.changes,
+    };
+  }
+
+  /**
+   * C-016: mark change(s) resolved on active context. Idempotent.
+   * BR-008: does not write source — status only.
+   */
+  markResolved(
+    agentId: string,
+    sessionKey: string,
+    input: { changeId?: string; selectionId?: string },
+  ):
+    | {
+        ok: true;
+        batch: VisualBatch;
+        updatedChangeIds: string[];
+        note: string;
+      }
+    | { ok: false; code: "not_found"; message: string } {
+    const located = this.locateActiveContext(agentId, sessionKey);
+    if (!located) {
+      return { ok: false, code: "not_found", message: "Kein aktiver Visual-Kontext" };
+    }
+
+    const note =
+      "resolved bedeutet: Agent/Source hat die Änderung adressiert — die Extension schreibt keinen Quellcode (BR-008).";
+
+    if (input.changeId !== undefined) {
+      const changeId = input.changeId;
+      let found = false;
+      const selections = located.batch.selections.map((sel) => {
+        if (input.selectionId !== undefined && sel.id !== input.selectionId) {
+          return sel;
+        }
+        const next = markChangeResolved(sel.changes, changeId);
+        if (next === undefined) {
+          return sel;
+        }
+        found = true;
+        return { ...sel, changes: next };
+      });
+      if (!found) {
+        return { ok: false, code: "not_found", message: "Change nicht gefunden" };
+      }
+      const batch: VisualBatch = {
+        ...located.batch,
+        selections,
+        revision: located.batch.revision + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      this.writeActiveContext(agentId, sessionKey, located.kind, batch);
+      return { ok: true, batch, updatedChangeIds: [changeId], note };
+    }
+
+    if (input.selectionId !== undefined) {
+      const index = located.batch.selections.findIndex((s) => s.id === input.selectionId);
+      if (index < 0) {
+        return { ok: false, code: "not_found", message: "Selektion nicht gefunden" };
+      }
+      const selection = located.batch.selections[index];
+      if (!selection) {
+        return { ok: false, code: "not_found", message: "Selektion nicht gefunden" };
+      }
+      const updatedChangeIds = selection.changes.map((c) => c.id);
+      const nextSelection: VisualSelection = {
+        ...selection,
+        changes: markAllChangesResolved(selection.changes),
+      };
+      const selections = [...located.batch.selections];
+      selections[index] = nextSelection;
+      const batch: VisualBatch = {
+        ...located.batch,
+        selections,
+        revision: located.batch.revision + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      this.writeActiveContext(agentId, sessionKey, located.kind, batch);
+      return { ok: true, batch, updatedChangeIds, note };
+    }
+
+    return {
+      ok: false,
+      code: "not_found",
+      message: "changeId oder selectionId erforderlich",
+    };
   }
 }

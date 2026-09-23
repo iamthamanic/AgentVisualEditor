@@ -2,13 +2,15 @@
  * Content-script Inspect Mode: hover highlight + click capture (FR-004).
  * Location: packages/extension/src/content/inspect.ts
  *
- * Overlay only for inspect — preview mutations go through preview.ts (INV-1).
+ * Overlay only for inspect — preview mutations go through preview.ts /
+ * agent-preview.ts (INV-1).
  */
 
 import {
   captureSelectionFromElement,
   isCrossOriginIframe,
 } from "./capture.js";
+import { handleAgentPreviewMessage, type AgentPreviewMessage } from "./agent-preview.js";
 import { handlePreviewMessage, type PreviewMessage } from "./preview.js";
 import { shouldIgnoreInspectShortcut } from "../editor/keyboard.js";
 import type { BackgroundToContent, ContentToBackground } from "../shared/types.js";
@@ -161,12 +163,23 @@ function isPreviewMessage(message: unknown): message is PreviewMessage {
   );
 }
 
+function isAgentPreviewMessage(message: unknown): message is AgentPreviewMessage {
+  if (!isRecord(message)) {
+    return false;
+  }
+  return message.type === "agent_preview_apply" || message.type === "agent_preview_clear";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
 chrome.runtime.onMessage.addListener(
-  (message: BackgroundToContent | PreviewMessage, _sender, sendResponse) => {
+  (
+    message: BackgroundToContent | PreviewMessage | AgentPreviewMessage,
+    _sender,
+    sendResponse,
+  ) => {
     if (message.type === "inspect_set") {
       setInspect(message.enabled);
       sendResponse({ ok: true });
@@ -174,6 +187,10 @@ chrome.runtime.onMessage.addListener(
     }
     if (isPreviewMessage(message)) {
       sendResponse(handlePreviewMessage(message));
+      return true;
+    }
+    if (isAgentPreviewMessage(message)) {
+      sendResponse(handleAgentPreviewMessage(message));
       return true;
     }
     return false;

@@ -16,6 +16,7 @@
     "test": "tsc -p tsconfig.json && node --test test/**/*.test.ts"
   },
   "dependencies": {
+    "@agent-visual-editor/core": "*",
     "@agent-visual-editor/protocol": "*"
   },
   "devDependencies": {

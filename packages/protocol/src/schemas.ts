@@ -26,6 +26,8 @@ export const ErrorEnvelopeSchema = Type.Object(
       Type.Literal("invalid_code"),
       Type.Literal("expired_code"),
       Type.Literal("rate_limited"),
+      Type.Literal("forbidden_property"),
+      Type.Literal("browser_unavailable"),
     ]),
     message: Type.String({ maxLength: 1024 }),
     requestId: Type.Optional(Type.String({ maxLength: 128 })),
@@ -382,12 +384,93 @@ export type ArtifactUploadMessage = {
   pngBase64: string;
 };
 
+const PreviewStyleSchema = Type.Object(
+  {
+    property: Type.String({ minLength: 1, maxLength: 256 }),
+    value: Type.String({ minLength: 1, maxLength: 256 }),
+  },
+  { additionalProperties: false },
+);
+
+/** C-015 plugin → extension: apply allowlisted preview styles. */
+export const PreviewApplyCommandSchema = Type.Object(
+  {
+    type: Type.Literal("preview.apply"),
+    protocolVersion: Type.Literal(PROTOCOL_VERSION),
+    requestId: Type.String({ minLength: 1, maxLength: 128 }),
+    selectionId: Type.String({ minLength: 1, maxLength: 128 }),
+    selector: Type.String({ minLength: 1, maxLength: 8192 }),
+    styles: Type.Array(PreviewStyleSchema, { minItems: 1, maxItems: 32 }),
+  },
+  { additionalProperties: false },
+);
+
+export type PreviewApplyCommand = {
+  type: "preview.apply";
+  protocolVersion: 1;
+  requestId: string;
+  selectionId: string;
+  selector: string;
+  styles: Array<{ property: string; value: string }>;
+};
+
+/** Extension → plugin: apply result (C-015). */
+export const PreviewApplyResultMessageSchema = Type.Object(
+  {
+    type: Type.Literal("preview.apply.result"),
+    protocolVersion: Type.Literal(PROTOCOL_VERSION),
+    requestId: Type.String({ minLength: 1, maxLength: 128 }),
+    selectionId: Type.String({ minLength: 1, maxLength: 128 }),
+    ok: Type.Literal(true),
+    applied: Type.Array(
+      Type.Object(
+        {
+          property: Type.String({ maxLength: 256 }),
+          value: Type.String({ maxLength: 256 }),
+          oldValue: Type.Optional(Type.String({ maxLength: 256 })),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 32 },
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export type PreviewApplyResultMessage = {
+  type: "preview.apply.result";
+  protocolVersion: 1;
+  requestId: string;
+  selectionId: string;
+  ok: true;
+  applied: Array<{ property: string; value: string; oldValue?: string }>;
+};
+
+/** RISK-009: clear agent preview stylesheet (plugin → extension). */
+export const PreviewClearCommandSchema = Type.Object(
+  {
+    type: Type.Literal("preview.clear"),
+    protocolVersion: Type.Literal(PROTOCOL_VERSION),
+    requestId: Type.String({ minLength: 1, maxLength: 128 }),
+    selectionId: Type.Optional(Type.String({ maxLength: 128 })),
+  },
+  { additionalProperties: false },
+);
+
+export type PreviewClearCommand = {
+  type: "preview.clear";
+  protocolVersion: 1;
+  requestId: string;
+  selectionId?: string;
+};
+
 export const InboundBridgeMessageSchema = Type.Union([
   BridgeHelloMessageSchema,
   SelectionCreateMessageSchema,
   SelectionRemoveMessageSchema,
   SelectionUpdateMessageSchema,
   ArtifactUploadMessageSchema,
+  PreviewApplyResultMessageSchema,
 ]);
 
 export type InboundBridgeMessage =
@@ -395,7 +478,19 @@ export type InboundBridgeMessage =
   | SelectionCreateMessage
   | SelectionRemoveMessage
   | SelectionUpdateMessage
-  | ArtifactUploadMessage;
+  | ArtifactUploadMessage
+  | PreviewApplyResultMessage;
+
+export const OutboundBridgeCommandSchema = Type.Union([
+  PreviewApplyCommandSchema,
+  PreviewClearCommandSchema,
+  ActiveSessionChangedSchema,
+]);
+
+export type OutboundBridgeCommand =
+  | PreviewApplyCommand
+  | PreviewClearCommand
+  | ActiveSessionChanged;
 
 export const PairingHttpBodySchema = Type.Union([
   PairingCompleteRequestSchema,
@@ -426,4 +521,8 @@ export type ArtifactUploadResultOk = {
   kind: "viewport" | "element";
 };
 
-export type BridgeOkResponse = SelectionResultOk | BridgeHelloAck | ArtifactUploadResultOk;
+export type BridgeOkResponse =
+  | SelectionResultOk
+  | BridgeHelloAck
+  | ArtifactUploadResultOk
+  | PreviewApplyResultMessage;

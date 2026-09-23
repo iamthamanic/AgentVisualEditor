@@ -3,7 +3,7 @@
  * Location: packages/openclaw-plugin/src/contract.ts
  *
  * OpenClaw requires operation ids matching /^[a-z][a-z0-9._-]{0,127}$/
- * Agent tools via operation.tool → registerTool (C-012..C-014).
+ * Agent tools via operation.tool → registerTool (C-012..C-016).
  */
 
 import { Type } from "typebox";
@@ -58,6 +58,9 @@ const OpErrorSchema = Type.Object(
       Type.Literal("unavailable_context"),
       Type.Literal("no_context"),
       Type.Literal("expired"),
+      Type.Literal("forbidden_property"),
+      Type.Literal("browser_unavailable"),
+      Type.Literal("stale"),
     ]),
     message: Type.String(),
   },
@@ -361,6 +364,83 @@ export const contract = defineFeatureContract({
         OpErrorSchema,
       ]),
     },
+    apply_preview: {
+      kind: "action",
+      description:
+        "Apply allowlisted CSS preview styles in the paired browser for a known selection (C-015 / FR-024). No arbitrary JS. Requires agentPreviewApplyEnabled.",
+      tool: {
+        name: "agent_visual_editor.apply_preview",
+        label: "AVE Apply Preview",
+        optional: true,
+      },
+      input: Type.Object(
+        {
+          selectionId: Type.String({ minLength: 1, maxLength: 128 }),
+          styles: Type.Array(
+            Type.Object(
+              {
+                property: Type.String({ minLength: 1, maxLength: 256 }),
+                value: Type.String({ minLength: 1, maxLength: 256 }),
+              },
+              { additionalProperties: false },
+            ),
+            { minItems: 1, maxItems: 32 },
+          ),
+          requestId: Type.Optional(Type.String({ maxLength: 128 })),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            selectionId: Type.String(),
+            requestId: Type.String(),
+            revision: Type.Integer({ minimum: 0 }),
+            applied: Type.Array(
+              Type.Object(
+                {
+                  property: Type.String(),
+                  value: Type.String(),
+                  oldValue: Type.Optional(Type.String()),
+                },
+                { additionalProperties: false },
+              ),
+            ),
+            uncommittedPreview: Type.Literal(true),
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
+    },
+    mark_resolved: {
+      kind: "action",
+      description:
+        "Mark a VisualChange or selection changes as resolved after source work (C-016 / FR-025). Idempotent. Does not write source (BR-008).",
+      tool: {
+        name: "agent_visual_editor.mark_resolved",
+        label: "AVE Mark Resolved",
+      },
+      input: Type.Object(
+        {
+          changeId: Type.Optional(Type.String({ maxLength: 128 })),
+          selectionId: Type.Optional(Type.String({ maxLength: 128 })),
+        },
+        { additionalProperties: false },
+      ),
+      output: Type.Union([
+        Type.Object(
+          {
+            ok: Type.Literal(true),
+            updatedChangeIds: Type.Array(Type.String()),
+            note: Type.String(),
+          },
+          { additionalProperties: false },
+        ),
+        OpErrorSchema,
+      ]),
+    },
     get_ui_flags: {
       kind: "query",
       description: "Read plugin UI feature flags for the Control UI.",
@@ -370,6 +450,7 @@ export const contract = defineFeatureContract({
           composerUiEnabled: Type.Boolean(),
           testSelectionEnabled: Type.Boolean(),
           previewEditingEnabled: Type.Boolean(),
+          agentPreviewApplyEnabled: Type.Boolean(),
         },
         { additionalProperties: false },
       ),

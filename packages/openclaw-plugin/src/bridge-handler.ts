@@ -116,6 +116,17 @@ export class BridgeMessageHandler {
       case "artifact.upload":
         result = this.uploadArtifact(message);
         break;
+      case "preview.apply.result":
+        // Normally intercepted by BridgeHub; acknowledge if reached.
+        result = {
+          ok: true,
+          type: "preview.apply.result",
+          protocolVersion: PROTOCOL_VERSION,
+          requestId: message.requestId,
+          selectionId: message.selectionId,
+          applied: message.applied,
+        };
+        break;
       default: {
         const _exhaustive: never = message;
         void _exhaustive;
