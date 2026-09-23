@@ -27,14 +27,31 @@ export type BoundingBox = {
 
 export type VisualChangeStatus = "pending" | "in_progress" | "resolved" | "reverted";
 
+export type VisualChangeKind = "style" | "text" | "attribute" | "comment" | "other";
+
 export type VisualChange = {
   id: string;
-  kind: "style" | "text" | "attribute" | "other";
+  kind: VisualChangeKind;
   property?: string;
   path?: string;
   oldValue?: string;
   newValue?: string;
   status: VisualChangeStatus;
+};
+
+/** Bounded PNG capture referenced by selectionId (not embedded in session JSON). */
+export type ScreenshotArtifactMeta = {
+  id: string;
+  selectionId: string;
+  mime: "image/png";
+  width: number;
+  height: number;
+  byteSize: number;
+  contentHash: string;
+  kind: "viewport" | "element";
+  pageUrl: string;
+  capturedAt: string;
+  expiresAt: string;
 };
 
 export type VisualSelection = {

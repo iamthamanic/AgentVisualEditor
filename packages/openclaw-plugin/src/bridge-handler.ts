@@ -1,14 +1,16 @@
 /**
- * Bridge message dispatcher → VisualBatchStore (C-004..C-009). INV-1: never send.
+ * Bridge message dispatcher → VisualBatchStore + ArtifactStore (C-004..C-009). INV-1: never send.
  * Location: packages/openclaw-plugin/src/bridge-handler.ts
  *
  * SLC-4: resolves data-ds via SourceResolver before admit (FR-011/FR-012).
+ * SLC-5: VisualChange updates + artifact.upload when previewEditingEnabled.
  */
 
 import {
   InvalidBatchStateError,
   LimitReachedError,
   PayloadTooLargeError,
+  SCREENSHOT_MAX_BYTES,
   type SelectionDraftInput,
   type SourceContext,
   type VisualChange,
@@ -22,6 +24,10 @@ import {
   type InboundBridgeMessage,
 } from "@agent-visual-editor/protocol";
 import type { ActiveSessionTracker } from "./active-session.js";
+import {
+  decodePngBase64,
+  type ArtifactStore,
+} from "./artifact-store.js";
 import type { PairedConnection } from "./pairing.js";
 import { toBatchDto } from "./project-batch.js";
 import type { VisualBatchStore } from "./store.js";
@@ -34,6 +40,8 @@ export type BridgeHandlerDeps = {
   connection: PairedConnection;
   onBatchChanged?: (agentId: string, sessionKey: string) => void;
   sourceResolver?: SourceResolver;
+  artifacts?: ArtifactStore;
+  previewEditingEnabled?: boolean;
 };
 
 export type BridgeHandleResult = BridgeOkResponse | ErrorEnvelope;
@@ -55,6 +63,12 @@ function withSourceFreshness(
   source: SourceContext | undefined,
 ): BridgeHandleResult {
   if (!result.ok || source === undefined) {
+    return result;
+  }
+  if (!("selectionId" in result) || !("requestId" in result)) {
+    return result;
+  }
+  if ("artifactId" in result) {
     return result;
   }
   return {
@@ -100,11 +114,7 @@ export class BridgeMessageHandler {
         result = await this.update(message);
         break;
       case "artifact.upload":
-        result = errorEnvelope(
-          "forbidden",
-          "artifact.upload ist in SLC-2 nicht freigeschaltet",
-          message.requestId,
-        );
+        result = this.uploadArtifact(message);
         break;
       default: {
         const _exhaustive: never = message;
@@ -216,7 +226,6 @@ export class BridgeMessageHandler {
     const before = this.deps.store.get(target.agentId, target.sessionKey);
     const existed = before?.selections.some((s) => s.id === message.selectionId) ?? false;
     if (!existed) {
-      // Idempotent success for already-removed chips.
       return {
         ok: true,
         requestId: message.requestId,
@@ -245,6 +254,15 @@ export class BridgeMessageHandler {
     if (!target.ok) {
       return errorEnvelope(target.code, target.message, message.requestId);
     }
+
+    if (message.change !== undefined && this.deps.previewEditingEnabled === false) {
+      return errorEnvelope(
+        "forbidden",
+        "Preview-Editing ist deaktiviert (previewEditingEnabled=false)",
+        message.requestId,
+      );
+    }
+
     const batch = this.deps.store.get(target.agentId, target.sessionKey);
     const existing = batch?.selections.find((s) => s.id === message.selectionId);
     if (!existing || !batch) {
@@ -280,7 +298,6 @@ export class BridgeMessageHandler {
     const shouldRefresh =
       message.element?.dataDs !== undefined || existing.source?.dataDs !== undefined;
     if (shouldRefresh) {
-      // Re-resolve on update so HMR/DOM-replace can refresh or mark stale (EDGE-006).
       const source = await this.resolveSource({
         pageUrl: existing.pageUrl,
         ...(dataDs !== undefined ? { dataDs } : {}),
@@ -327,6 +344,91 @@ export class BridgeMessageHandler {
     } catch (error) {
       return this.mapStoreError(error, message.requestId);
     }
+  }
+
+  private uploadArtifact(
+    message: Extract<InboundBridgeMessage, { type: "artifact.upload" }>,
+  ): BridgeHandleResult {
+    if (this.deps.previewEditingEnabled === false) {
+      return errorEnvelope(
+        "forbidden",
+        "Screenshot-Upload ist deaktiviert (previewEditingEnabled=false)",
+        message.requestId,
+      );
+    }
+    const artifacts = this.deps.artifacts;
+    if (!artifacts) {
+      return errorEnvelope(
+        "forbidden",
+        "artifact.upload ist nicht verfügbar",
+        message.requestId,
+      );
+    }
+
+    const target = this.deps.sessions.requireExact();
+    if (!target.ok) {
+      return errorEnvelope(target.code, target.message, message.requestId);
+    }
+
+    const batch = this.deps.store.get(target.agentId, target.sessionKey);
+    const selection = batch?.selections.find((s) => s.id === message.selectionId);
+    if (!selection) {
+      return errorEnvelope("not_found", "Selektion nicht gefunden", message.requestId);
+    }
+
+    if (message.mime !== "image/png") {
+      return errorEnvelope("invalid_type", "Nur image/png erlaubt", message.requestId);
+    }
+    if (message.byteSize > SCREENSHOT_MAX_BYTES) {
+      return errorEnvelope(
+        "too_large",
+        `Screenshot überschreitet ${SCREENSHOT_MAX_BYTES} Bytes`,
+        message.requestId,
+      );
+    }
+
+    const png = decodePngBase64(message.pngBase64);
+    if (!png) {
+      return errorEnvelope("invalid_type", "PNG-Body ungültig", message.requestId);
+    }
+    if (png.byteLength !== message.byteSize) {
+      return errorEnvelope(
+        "invalid_message",
+        "byteSize stimmt nicht mit PNG-Body überein",
+        message.requestId,
+      );
+    }
+
+    const put = artifacts.put({
+      selectionId: message.selectionId,
+      agentId: target.agentId,
+      sessionKey: target.sessionKey,
+      width: message.width,
+      height: message.height,
+      png,
+      kind: message.kind ?? "viewport",
+      pageUrl: message.pageUrl ?? selection.pageUrl,
+      ...(message.capturedAt !== undefined ? { capturedAt: message.capturedAt } : {}),
+      ...(message.contentHash !== undefined ? { contentHash: message.contentHash } : {}),
+    });
+
+    if (!put.ok) {
+      return errorEnvelope(put.code, put.message, message.requestId);
+    }
+
+    return {
+      ok: true,
+      requestId: message.requestId,
+      selectionId: message.selectionId,
+      artifactId: put.artifact.id,
+      deduped: put.deduped,
+      capturedAt: put.artifact.capturedAt,
+      expiresAt: put.artifact.expiresAt,
+      byteSize: put.artifact.byteSize,
+      width: put.artifact.width,
+      height: put.artifact.height,
+      kind: put.artifact.kind,
+    };
   }
 
   private mapStoreError(error: unknown, requestId: string): ErrorEnvelope {

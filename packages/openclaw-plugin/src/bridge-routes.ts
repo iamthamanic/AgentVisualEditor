@@ -20,6 +20,7 @@ import {
 } from "@agent-visual-editor/protocol";
 import type { SourceResolver } from "@agent-visual-editor/domscribe-adapter";
 import type { ActiveSessionTracker } from "./active-session.js";
+import type { ArtifactStore } from "./artifact-store.js";
 import { BridgeMessageHandler } from "./bridge-handler.js";
 import {
   BRIDGE_PATH,
@@ -111,6 +112,8 @@ export type BridgeRouteContext = {
   store: VisualBatchStore;
   onBatchChanged: (agentId: string, sessionKey: string) => void;
   sourceResolver?: SourceResolver;
+  artifacts?: ArtifactStore;
+  previewEditingEnabled?: boolean;
 };
 
 export type LiveBridgeSocket = {
@@ -121,7 +124,8 @@ export type LiveBridgeSocket = {
 
 export class BridgeHub {
   private readonly sockets = new Map<string, Set<LiveBridgeSocket>>();
-  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 300 * 1024 });
+  /** Allow up to ~3 MiB JSON (2 MiB PNG + base64 overhead) for C-009. */
+  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 3 * 1024 * 1024 });
 
   constructor(private readonly ctx: BridgeRouteContext) {}
 
@@ -264,6 +268,8 @@ export class BridgeHub {
       ...(this.ctx.sourceResolver !== undefined
         ? { sourceResolver: this.ctx.sourceResolver }
         : {}),
+      ...(this.ctx.artifacts !== undefined ? { artifacts: this.ctx.artifacts } : {}),
+      previewEditingEnabled: this.ctx.previewEditingEnabled ?? true,
     });
 
     const live: LiveBridgeSocket = {

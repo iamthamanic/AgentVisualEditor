@@ -42,12 +42,64 @@ export type CapturedSelection = {
   tabId?: string;
 };
 
+export type VisualChangePayload = {
+  id: string;
+  kind: "style" | "text" | "attribute" | "comment" | "other";
+  property?: string;
+  path?: string;
+  oldValue?: string;
+  newValue?: string;
+  status: "pending" | "in_progress" | "resolved" | "reverted";
+};
+
+export type ArtifactUploadPayload = {
+  selectionId: string;
+  mime: "image/png";
+  width: number;
+  height: number;
+  byteSize: number;
+  pngBase64: string;
+  contentHash?: string;
+  kind?: "viewport" | "element";
+  pageUrl?: string;
+  capturedAt?: string;
+};
+
 export type ExtensionToBackground =
   | { type: "pair"; code: string; gatewayBaseUrl: string }
   | { type: "disconnect" }
   | { type: "set_inspect"; enabled: boolean }
   | { type: "remove_selection"; selectionId: string }
-  | { type: "get_status" };
+  | { type: "get_status" }
+  | {
+      type: "preview_edit";
+      selectionId: string;
+      selector: string;
+      change: VisualChangePayload;
+      apply:
+        | { kind: "style"; property: string; value: string }
+        | { kind: "text"; value: string }
+        | { kind: "comment" };
+    }
+  | {
+      type: "preview_revert";
+      selectionId: string;
+      selector: string;
+      change: VisualChangePayload;
+    }
+  | {
+      type: "preview_clear";
+      selectionId: string;
+      selector: string;
+      changes: VisualChangePayload[];
+    }
+  | {
+      type: "capture_screenshot";
+      selectionId: string;
+      kind: "viewport" | "element";
+      pageUrl?: string;
+      box?: { x: number; y: number; width: number; height: number };
+    };
 
 export type BackgroundToUi = {
   type: "status";
@@ -56,8 +108,11 @@ export type BackgroundToUi = {
   domscribe: DomscribeUiState;
   inspectEnabled: boolean;
   lastSelectionId: string | null;
+  lastSelector: string | null;
   lastError: string | null;
   paired: boolean;
+  previewEditingEnabled: boolean;
+  lastArtifactId: string | null;
 };
 
 export type ContentToBackground =

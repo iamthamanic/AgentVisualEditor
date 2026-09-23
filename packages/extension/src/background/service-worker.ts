@@ -1,9 +1,10 @@
 /**
- * MV3 service worker: pairing, WSS bridge, inspect relay (INV-1: never auto-send).
+ * MV3 service worker: pairing, WSS bridge, inspect relay, preview/screenshots (INV-1).
  * Location: packages/extension/src/background/service-worker.ts
  */
 
 import { BridgeClient, completePairing } from "../bridge/client.js";
+import { boundPngDataUrl, sha256Hex } from "../editor/screenshot-bounds.js";
 import {
   clearPairing,
   getOrCreateExtensionInstanceId,
@@ -19,6 +20,7 @@ import type {
   ContentToBackground,
   DomscribeUiState,
   ExtensionToBackground,
+  VisualChangePayload,
 } from "../shared/types.js";
 
 let bridge: BridgeClient | null = null;
@@ -32,8 +34,11 @@ let chat: ActiveChatTarget = {
 };
 let inspectEnabled = false;
 let lastSelectionId: string | null = null;
+let lastSelector: string | null = null;
 let lastError: string | null = null;
+let lastArtifactId: string | null = null;
 let domscribe: DomscribeUiState = "unavailable";
+const previewEditingEnabled = true;
 
 function mapSourceFreshness(value: unknown): DomscribeUiState | undefined {
   if (value === "fresh") return "available";
@@ -50,8 +55,11 @@ function statusPayload(): BackgroundToUi {
     domscribe,
     inspectEnabled,
     lastSelectionId,
+    lastSelector,
     lastError,
     paired: bridge !== null || connection === "connected" || connection === "reconnecting",
+    previewEditingEnabled,
+    lastArtifactId,
   };
 }
 
@@ -73,6 +81,39 @@ async function broadcastInspect(): Promise<void> {
   );
 }
 
+async function activeTabId(): Promise<number | undefined> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs[0]?.id;
+}
+
+async function sendToActiveTab(message: unknown): Promise<unknown> {
+  const tabId = await activeTabId();
+  if (tabId === undefined) {
+    throw new Error("Kein aktiver Tab");
+  }
+  return chrome.tabs.sendMessage(tabId, message);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readPreviewResult(
+  value: unknown,
+): { ok: boolean; oldValue?: string; message?: string } | undefined {
+  if (!isRecord(value) || typeof value.ok !== "boolean") {
+    return undefined;
+  }
+  const result: { ok: boolean; oldValue?: string; message?: string } = { ok: value.ok };
+  if (typeof value.oldValue === "string") {
+    result.oldValue = value.oldValue;
+  }
+  if (typeof value.message === "string") {
+    result.message = value.message;
+  }
+  return result;
+}
+
 function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
   if (!config) return;
   bridge?.stop();
@@ -86,7 +127,6 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
       broadcastStatus();
     },
     onSession: (next) => {
-      // Latest revision wins (C-005).
       if (next.revision >= chat.revision) {
         chat = next;
         broadcastStatus();
@@ -100,6 +140,9 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
       if (result.ok && result.selectionId) {
         lastSelectionId = result.selectionId;
         lastError = null;
+        if (result.artifactId) {
+          lastArtifactId = result.artifactId;
+        }
         const mapped = mapSourceFreshness(result.sourceFreshness);
         if (mapped !== undefined) {
           domscribe = mapped;
@@ -132,6 +175,15 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 void boot();
+
+function pushChangeUpdate(selectionId: string, change: VisualChangePayload): void {
+  // INV-1: selection.update only — never prepare/admit Send.
+  bridge?.sendSelectionUpdate({
+    selectionId,
+    requestId: `upd_${crypto.randomUUID()}`,
+    change,
+  });
+}
 
 chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentToBackground, _sender, sendResponse) => {
   void (async () => {
@@ -197,8 +249,8 @@ chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentTo
       const local = await loadLocalSelections();
       local.push(message.selection);
       await saveLocalSelections(local);
+      lastSelector = message.selection.element.selector;
       const requestId = `sel_${crypto.randomUUID()}`;
-      // INV-1: only bridge attach — never triggers OpenClaw send.
       bridge?.sendSelectionCreate(message.selection, requestId);
       sendResponse({ ok: true });
       return;
@@ -208,6 +260,162 @@ chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentTo
       lastError = message.message;
       broadcastStatus();
       sendResponse({ ok: true });
+      return;
+    }
+
+    if (message.type === "preview_edit") {
+      if (!previewEditingEnabled) {
+        sendResponse({ ok: false, message: "Preview-Editing deaktiviert" });
+        return;
+      }
+      try {
+        if (message.apply.kind === "style") {
+          const result = readPreviewResult(
+            await sendToActiveTab({
+              type: "preview_apply_style",
+              selector: message.selector,
+              property: message.apply.property,
+              value: message.apply.value,
+            }),
+          );
+          if (!result?.ok) {
+            sendResponse({ ok: false, message: result?.message ?? "Preview fehlgeschlagen" });
+            return;
+          }
+          const change = { ...message.change };
+          if (result.oldValue !== undefined && change.oldValue === undefined) {
+            change.oldValue = result.oldValue;
+          }
+          lastSelector = message.selector;
+          pushChangeUpdate(message.selectionId, change);
+          sendResponse({ ok: true, change, status: statusPayload() });
+          return;
+        }
+        if (message.apply.kind === "text") {
+          const result = readPreviewResult(
+            await sendToActiveTab({
+              type: "preview_apply_text",
+              selector: message.selector,
+              value: message.apply.value,
+            }),
+          );
+          if (!result?.ok) {
+            sendResponse({ ok: false, message: result?.message ?? "Text-Preview fehlgeschlagen" });
+            return;
+          }
+          const change = { ...message.change };
+          if (result.oldValue !== undefined && change.oldValue === undefined) {
+            change.oldValue = result.oldValue;
+          }
+          pushChangeUpdate(message.selectionId, change);
+          sendResponse({ ok: true, change, status: statusPayload() });
+          return;
+        }
+        // comment — no DOM mutation
+        pushChangeUpdate(message.selectionId, message.change);
+        sendResponse({ ok: true, change: message.change, status: statusPayload() });
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        sendResponse({ ok: false, message: lastError });
+      }
+      return;
+    }
+
+    if (message.type === "preview_revert") {
+      try {
+        if (message.change.kind === "style" && message.change.property) {
+          await sendToActiveTab({
+            type: "preview_revert_style",
+            selector: message.selector,
+            property: message.change.property,
+            oldValue: message.change.oldValue ?? "",
+          });
+        } else if (message.change.kind === "text") {
+          await sendToActiveTab({
+            type: "preview_revert_text",
+            selector: message.selector,
+            oldValue: message.change.oldValue ?? "",
+          });
+        }
+        pushChangeUpdate(message.selectionId, message.change);
+        sendResponse({ ok: true, status: statusPayload() });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (message.type === "preview_clear") {
+      try {
+        const styles = message.changes
+          .filter((c) => c.kind === "style" && c.property && c.status === "pending")
+          .map((c) => ({
+            property: c.property!,
+            oldValue: c.oldValue ?? "",
+          }));
+        const textChange = message.changes.find((c) => c.kind === "text" && c.status === "pending");
+        await sendToActiveTab({
+          type: "preview_clear_all",
+          selector: message.selector,
+          styles,
+          ...(textChange?.oldValue !== undefined ? { textOldValue: textChange.oldValue } : {}),
+        });
+        for (const change of message.changes) {
+          if (change.status === "pending") {
+            pushChangeUpdate(message.selectionId, { ...change, status: "reverted" });
+          }
+        }
+        sendResponse({ ok: true, status: statusPayload() });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (message.type === "capture_screenshot") {
+      if (!previewEditingEnabled) {
+        sendResponse({ ok: false, message: "Screenshot-Upload deaktiviert" });
+        return;
+      }
+      try {
+        const dataUrl = await chrome.tabs.captureVisibleTab({ format: "png" });
+        const bounded = boundPngDataUrl(dataUrl);
+        if (!bounded.ok) {
+          sendResponse({ ok: false, message: bounded.message, code: bounded.code });
+          return;
+        }
+        const binary = Uint8Array.from(atob(bounded.pngBase64), (c) => c.charCodeAt(0));
+        const contentHash = await sha256Hex(binary);
+        const capturedAt = new Date().toISOString();
+        const width = message.box?.width ?? 1;
+        const height = message.box?.height ?? 1;
+        // Element screenshots: still viewport capture referenced by selection (crop deferred).
+        bridge?.sendArtifactUpload({
+          requestId: `art_${crypto.randomUUID()}`,
+          selectionId: message.selectionId,
+          mime: "image/png",
+          width: Math.max(1, Math.round(width)),
+          height: Math.max(1, Math.round(height)),
+          byteSize: bounded.byteSize,
+          pngBase64: bounded.pngBase64,
+          contentHash,
+          kind: message.kind,
+          ...(message.pageUrl !== undefined ? { pageUrl: message.pageUrl } : {}),
+          capturedAt,
+        });
+        sendResponse({ ok: true, status: statusPayload() });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   })();
   return true;

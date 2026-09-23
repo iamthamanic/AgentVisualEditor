@@ -147,6 +147,8 @@ const SelectionDetailSchema = Type.Object(
           id: Type.String(),
           kind: Type.String(),
           property: Type.Union([Type.String(), Type.Null()]),
+          oldValue: Type.Union([Type.String(), Type.Null()]),
+          newValue: Type.Union([Type.String(), Type.Null()]),
           status: Type.String(),
         },
         { additionalProperties: false },
@@ -324,7 +326,7 @@ export const contract = defineFeatureContract({
     get_screenshot: {
       kind: "query",
       description:
-        "Return a screenshot artifact for a selection when available (C-014). Read-only stub until SLC-5.",
+        "Return a screenshot artifact for a selection when available (C-014 / FR-018).",
       tool: {
         name: "agent_visual_editor.get_screenshot",
         label: "AVE Screenshot",
@@ -342,8 +344,17 @@ export const contract = defineFeatureContract({
           {
             ok: Type.Literal(true),
             artifactId: Type.String(),
+            selectionId: Type.String(),
             mimeType: Type.String(),
+            width: Type.Integer(),
+            height: Type.Integer(),
+            byteSize: Type.Integer(),
+            kind: Type.String(),
+            pageUrl: Type.String(),
+            capturedAt: Type.String(),
+            expiresAt: Type.String(),
             expired: Type.Literal(false),
+            pngBase64: Type.String(),
           },
           { additionalProperties: false },
         ),
@@ -358,6 +369,7 @@ export const contract = defineFeatureContract({
         {
           composerUiEnabled: Type.Boolean(),
           testSelectionEnabled: Type.Boolean(),
+          previewEditingEnabled: Type.Boolean(),
         },
         { additionalProperties: false },
       ),

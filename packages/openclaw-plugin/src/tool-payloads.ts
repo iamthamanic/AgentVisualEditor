@@ -55,6 +55,8 @@ export type SelectionDetailDto = {
     id: string;
     kind: string;
     property: string | null;
+    oldValue: string | null;
+    newValue: string | null;
     status: string;
   }>;
 };
@@ -147,6 +149,8 @@ export function toSelectionDetailDto(
       id: change.id,
       kind: change.kind,
       property: change.property ?? null,
+      oldValue: change.oldValue ?? null,
+      newValue: change.newValue ?? null,
       status: change.status,
     })),
   };
