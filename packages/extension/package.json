@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Chrome MV3 extension placeholder (SLC-2)",
+  "description": "Chrome MV3 extension — Inspect Mode, pairing, WSS bridge (SLC-2)",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,6 +12,15 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && node ./scripts/build-extension.mjs",
+    "test": "tsc -p tsconfig.json && node --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@agent-visual-editor/protocol": "*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.24",
+    "esbuild": "0.28.2",
+    "typescript": "^5.9.0"
   }
 }

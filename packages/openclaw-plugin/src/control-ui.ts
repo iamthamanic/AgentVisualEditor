@@ -1,8 +1,9 @@
 /**
- * Control UI: chip region above mountDefault composer + health page.
+ * Control UI: chip region above mountDefault composer + health/pairing page.
  * Location: packages/openclaw-plugin/src/control-ui.ts
  *
  * German user-facing strings. Canonical setDraft/send only (FR-019/FR-020).
+ * Composer reports active session for extension targeting (C-005).
  */
 
 import { defineControlUiPlugin } from "openclaw/plugin-sdk/control-ui";
@@ -40,19 +41,120 @@ export default defineControlUiPlugin({
       id: "ave-health",
       label: "AVE Status",
       mount(container) {
+        const feature = createFeatureClient(contract, host);
+
         const section = document.createElement("section");
         section.className = "ave-health-page";
+
         const heading = document.createElement("h1");
         heading.textContent = "Agent Visual Editor";
+
         const status = document.createElement("p");
-        status.textContent = "Plugin aktiv. Chips erscheinen im Composer der aktuellen Session.";
+        status.className = "ave-health-status";
+        status.textContent = "Lade Status…";
+
         const hint = document.createElement("p");
         hint.className = "ave-health-hint";
         hint.textContent =
           "Selektion startet keinen Agent-Lauf. Nur explizites Senden löst eine Nachricht aus.";
-        section.append(heading, status, hint);
+
+        const pairingBox = document.createElement("div");
+        pairingBox.className = "ave-pairing-box";
+
+        const pairingTitle = document.createElement("h2");
+        pairingTitle.textContent = "Extension koppeln";
+
+        const codeOut = document.createElement("output");
+        codeOut.className = "ave-pairing-code";
+        codeOut.setAttribute("aria-live", "polite");
+        codeOut.textContent = "Noch kein Code erzeugt";
+
+        const pairBtn = document.createElement("button");
+        pairBtn.type = "button";
+        pairBtn.className = "ave-pairing-start";
+        pairBtn.textContent = "Pairing-Code erzeugen";
+
+        const connList = document.createElement("ul");
+        connList.className = "ave-connection-list";
+        connList.setAttribute("aria-label", "Gekoppelte Extensions");
+
+        pairingBox.append(pairingTitle, codeOut, pairBtn, connList);
+        section.append(heading, status, hint, pairingBox);
         container.append(section);
-        return { dispose: () => section.remove() };
+
+        let disposed = false;
+
+        const refresh = async () => {
+          try {
+            const health = await feature.invoke("get_health", {});
+            const connections = await feature.invoke("list_connections", {});
+            if (disposed) return;
+            status.textContent =
+              `Plugin aktiv · Bridge ${health.bridgePath} · ` +
+              `Session: ${health.activeSessionStatus} · ` +
+              `Domscribe: ${health.domscribeStatus} · ` +
+              `Verbindungen: ${health.pairedConnectionCount}`;
+
+            connList.replaceChildren();
+            for (const row of connections.connections) {
+              if (row.revoked) continue;
+              const li = document.createElement("li");
+              li.className = "ave-connection-row";
+              const label = document.createElement("span");
+              label.textContent =
+                row.extensionLabel ?? row.extensionInstanceId.slice(0, 12);
+              const revoke = document.createElement("button");
+              revoke.type = "button";
+              revoke.textContent = "Widerrufen";
+              revoke.onclick = async () => {
+                try {
+                  await feature.invoke("connection_revoke", {
+                    connectionId: row.connectionId,
+                  });
+                  if (!disposed) await refresh();
+                } catch (error) {
+                  if (!disposed) {
+                    status.textContent = String(error);
+                  }
+                }
+              };
+              li.append(label, revoke);
+              connList.append(li);
+            }
+          } catch (error) {
+            if (!disposed) {
+              status.textContent = String(error);
+            }
+          }
+        };
+
+        pairBtn.onclick = async () => {
+          try {
+            const result = await feature.invoke("pairing_start", {
+              label: "Chrome Extension",
+            });
+            if (disposed) return;
+            if (result.ok) {
+              codeOut.textContent = `${result.code} (gültig bis ${result.expiresAt})`;
+              await refresh();
+            } else {
+              codeOut.textContent = result.message;
+            }
+          } catch (error) {
+            if (!disposed) {
+              codeOut.textContent = String(error);
+            }
+          }
+        };
+
+        void refresh();
+
+        return {
+          dispose: () => {
+            disposed = true;
+            section.remove();
+          },
+        };
       },
     });
 
@@ -106,6 +208,18 @@ export default defineControlUiPlugin({
 
         let watchDispose: (() => void) | undefined;
         let disposed = false;
+
+        const reportSession = async () => {
+          try {
+            await feature.invoke("report_active_session", {
+              sessionKey: current.props.sessionKey,
+              agentId: current.props.agentId,
+              title: null,
+            });
+          } catch {
+            // Non-fatal: extension targeting degrades to no_active_session.
+          }
+        };
 
         const renderChips = (batch: BatchView) => {
           chipList.replaceChildren();
@@ -257,7 +371,6 @@ export default defineControlUiPlugin({
           }
         };
 
-        // Debug button gated by plugin config testSelectionEnabled.
         void feature
           .invoke("get_ui_flags", {})
           .then((flags) => {
@@ -268,6 +381,7 @@ export default defineControlUiPlugin({
             testBtn.hidden = true;
           });
 
+        void reportSession();
         void refresh();
         startWatch();
 
@@ -280,6 +394,7 @@ export default defineControlUiPlugin({
             if (sessionChanged) {
               status.textContent = "";
               renderChips(emptyBatch());
+              void reportSession();
               startWatch();
               void refresh();
             }
@@ -290,6 +405,11 @@ export default defineControlUiPlugin({
           dispose() {
             disposed = true;
             watchDispose?.();
+            void feature.invoke("report_active_session", {
+              sessionKey: null,
+              agentId: null,
+              title: null,
+            }).catch(() => undefined);
             unmountDefault();
             root.remove();
           },
