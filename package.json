@@ -1,0 +1,21 @@
+{
+  "name": "agent-visual-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol && npm run typecheck --workspaces --if-present",
+    "build": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol && npm run build --workspaces --if-present",
+    "test": "npm run build -w @agent-visual-editor/core -w @agent-visual-editor/protocol && npm run test --workspaces --if-present",
+    "setup:host": "node scripts/setup-host-toolchain.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

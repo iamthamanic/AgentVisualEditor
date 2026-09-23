@@ -1,0 +1,24 @@
+name: agent-visual-editor
+kind: monorepo
+locale: de
+appRoot: packages/openclaw-plugin
+security:
+  checklist: secure-by-default
+typedStrict:
+  languages:
+    - typescript
+testGate:
+  profile: monorepo
+  commands:
+    - npm run typecheck
+    - npm run build
+    - npm test
+    - cd packages/openclaw-plugin && npm run build && npm run validate
+compositionGate:
+  enabled: true
+  notes: Prefer mountDefault composer composition; chip region above built-in
+pipeline:
+  - implement
+  - verify-ticket
+  - composition-gate
+  - review
