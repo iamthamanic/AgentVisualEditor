@@ -3,6 +3,8 @@
  * Location: packages/openclaw-plugin/src/config.ts
  */
 
+import { validateDomscribeRelayUrl } from "@agent-visual-editor/domscribe-adapter";
+
 export type AvePluginConfig = {
   composerUiEnabled: boolean;
   testSelectionEnabled: boolean;
@@ -34,15 +36,19 @@ export function readAveConfig(raw: Record<string, unknown> | undefined): AvePlug
   const domscribeRelayUrl = raw?.domscribeRelayUrl;
   const previewEditingEnabled = raw?.previewEditingEnabled;
   const agentPreviewApplyEnabled = raw?.agentPreviewApplyEnabled;
+
+  let relayUrl: string | null = null;
+  if (typeof domscribeRelayUrl === "string" && domscribeRelayUrl.trim().length > 0) {
+    const validated = validateDomscribeRelayUrl(domscribeRelayUrl);
+    relayUrl = validated.ok ? validated.url : null;
+  }
+
   return {
     composerUiEnabled: typeof composerUiEnabled === "boolean" ? composerUiEnabled : DEFAULT_AVE_CONFIG.composerUiEnabled,
     testSelectionEnabled:
       typeof testSelectionEnabled === "boolean" ? testSelectionEnabled : DEFAULT_AVE_CONFIG.testSelectionEnabled,
     domscribeEnabled: typeof domscribeEnabled === "boolean" ? domscribeEnabled : DEFAULT_AVE_CONFIG.domscribeEnabled,
-    domscribeRelayUrl:
-      typeof domscribeRelayUrl === "string" && domscribeRelayUrl.trim().length > 0
-        ? domscribeRelayUrl.trim()
-        : null,
+    domscribeRelayUrl: relayUrl,
     previewEditingEnabled:
       typeof previewEditingEnabled === "boolean"
         ? previewEditingEnabled

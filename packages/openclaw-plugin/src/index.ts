@@ -142,6 +142,7 @@ const plugin = defineFeaturePlugin({
     const sessions = new ActiveSessionTracker();
     const artifacts = new ArtifactStore();
     const config = readAveConfig(api.pluginConfig);
+    sessions.setPreviewEditingEnabled(config.previewEditingEnabled);
     const sourceResolver = buildSourceResolver(config);
 
     let bridgeHub: BridgeHub | undefined;
@@ -572,12 +573,103 @@ const plugin = defineFeaturePlugin({
         };
       },
 
-      report_active_session(input) {
+      report_active_session(input, context) {
+        const ctx = contextIdentity(context);
+        if (!ctx.sessionKey || !ctx.agentId) {
+          return opError(
+            "no_session_context",
+            "Keine gültige Session-Identität (sessionKey + agentId) verfügbar",
+          );
+        }
+
+        const current = sessions.get();
+        const callerOwnsActive =
+          current.status === "none" ||
+          (current.sessionKey === ctx.sessionKey && current.agentId === ctx.agentId);
+
+        // Clear / ambiguous only when caller owns the current active marker (or none).
+        if (input.ambiguous === true) {
+          if (!callerOwnsActive) {
+            return opError(
+              "forbidden",
+              "Aktive Session gehört einem anderen Kontext — Clear/Ambiguous verweigert",
+            );
+          }
+          const event = sessions.report({
+            sessionKey: null,
+            agentId: null,
+            title: input.title ?? null,
+            ambiguous: true,
+          });
+          return {
+            ok: true as const,
+            revision: event.revision,
+            status: event.status,
+            sessionKey: event.sessionKey,
+            agentId: event.agentId,
+            title: event.title ?? null,
+          };
+        }
+
+        const requestedKey = input.sessionKey;
+        const requestedAgent = input.agentId;
+        const clearing =
+          requestedKey === null &&
+          requestedAgent === null;
+
+        if (clearing) {
+          if (!callerOwnsActive) {
+            return opError(
+              "forbidden",
+              "Aktive Session gehört einem anderen Kontext — Clear verweigert",
+            );
+          }
+          const event = sessions.report({
+            sessionKey: null,
+            agentId: null,
+            title: input.title ?? null,
+          });
+          return {
+            ok: true as const,
+            revision: event.revision,
+            status: event.status,
+            sessionKey: event.sessionKey,
+            agentId: event.agentId,
+            title: event.title ?? null,
+          };
+        }
+
+        if (typeof requestedKey === "string" || typeof requestedAgent === "string") {
+          const binding = bindSessionIdentity({
+            ...(typeof requestedKey === "string" ? { requestedSessionKey: requestedKey } : {}),
+            ...(typeof requestedAgent === "string" ? { requestedAgentId: requestedAgent } : {}),
+            contextSessionKey: ctx.sessionKey,
+            contextAgentId: ctx.agentId,
+          });
+          if (!binding.ok) {
+            return opError(binding.code, binding.message);
+          }
+          // Setting only allowed to the caller's own session (bind enforces).
+          const event = sessions.report({
+            sessionKey: binding.identity.sessionKey,
+            agentId: binding.identity.agentId,
+            title: input.title ?? null,
+          });
+          return {
+            ok: true as const,
+            revision: event.revision,
+            status: event.status,
+            sessionKey: event.sessionKey,
+            agentId: event.agentId,
+            title: event.title ?? null,
+          };
+        }
+
+        // Use host context only — always the caller's own session.
         const event = sessions.report({
-          sessionKey: input.sessionKey ?? null,
-          agentId: input.agentId ?? null,
+          sessionKey: ctx.sessionKey,
+          agentId: ctx.agentId,
           title: input.title ?? null,
-          ambiguous: input.ambiguous,
         });
         return {
           ok: true as const,
@@ -601,6 +693,7 @@ const plugin = defineFeaturePlugin({
           activeSessionStatus: snap.status,
           domscribeStatus: sourceResolver.lastStatus(),
           protocolVersion: PROTOCOL_VERSION,
+          previewEditingEnabled: config.previewEditingEnabled,
         };
       },
     };

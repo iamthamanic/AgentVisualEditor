@@ -11,6 +11,9 @@ import {
   LimitReachedError,
   PayloadTooLargeError,
   SCREENSHOT_MAX_BYTES,
+  isAllowedStyleProperty,
+  isSafeCssValue,
+  sanitizePageUrl,
   type SelectionDraftInput,
   type SourceContext,
   type VisualChange,
@@ -39,6 +42,8 @@ export type BridgeHandlerDeps = {
   sessions: ActiveSessionTracker;
   connection: PairedConnection;
   onBatchChanged?: (agentId: string, sessionKey: string) => void;
+  onSelectionCreated?: (selectionId: string) => void;
+  onSelectionRemoved?: (selectionId: string) => void;
   sourceResolver?: SourceResolver;
   artifacts?: ArtifactStore;
   previewEditingEnabled?: boolean;
@@ -147,6 +152,7 @@ export class BridgeMessageHandler {
       requestId,
       connectionId: this.deps.connection.connectionId,
       protocolVersion: PROTOCOL_VERSION,
+      previewEditingEnabled: this.deps.previewEditingEnabled ?? true,
     };
   }
 
@@ -215,6 +221,7 @@ export class BridgeMessageHandler {
     try {
       const attached = this.deps.store.attach(target.agentId, target.sessionKey, draft);
       this.deps.onBatchChanged?.(target.agentId, target.sessionKey);
+      this.deps.onSelectionCreated?.(attached.selection.id);
       return withSourceFreshness(
         {
           ok: true,
@@ -247,6 +254,7 @@ export class BridgeMessageHandler {
     try {
       this.deps.store.remove(target.agentId, target.sessionKey, message.selectionId);
       this.deps.onBatchChanged?.(target.agentId, target.sessionKey);
+      this.deps.onSelectionRemoved?.(message.selectionId);
       return {
         ok: true,
         requestId: message.requestId,
@@ -272,6 +280,25 @@ export class BridgeMessageHandler {
         "Preview-Editing ist deaktiviert (previewEditingEnabled=false)",
         message.requestId,
       );
+    }
+
+    if (message.change !== undefined && message.change.kind === "style") {
+      const property = message.change.property;
+      const value = message.change.newValue;
+      if (typeof property !== "string" || !isAllowedStyleProperty(property)) {
+        return errorEnvelope(
+          "forbidden_property",
+          `CSS-Property nicht erlaubt: ${property ?? "(fehlt)"}`,
+          message.requestId,
+        );
+      }
+      if (typeof value !== "string" || !isSafeCssValue(value)) {
+        return errorEnvelope(
+          "forbidden_property",
+          `Ungültiger CSS-Wert für ${property}`,
+          message.requestId,
+        );
+      }
     }
 
     const batch = this.deps.store.get(target.agentId, target.sessionKey);
@@ -418,7 +445,7 @@ export class BridgeMessageHandler {
       height: message.height,
       png,
       kind: message.kind ?? "viewport",
-      pageUrl: message.pageUrl ?? selection.pageUrl,
+      pageUrl: sanitizePageUrl(message.pageUrl ?? selection.pageUrl),
       ...(message.capturedAt !== undefined ? { capturedAt: message.capturedAt } : {}),
       ...(message.contentHash !== undefined ? { contentHash: message.contentHash } : {}),
     });

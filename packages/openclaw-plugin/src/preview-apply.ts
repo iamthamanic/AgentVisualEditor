@@ -53,11 +53,21 @@ export type ApplyPreviewResult =
       message: string;
     };
 
+/** Session-scoped requestId dedupe: `${agentId}::${sessionKey}::${requestId}`. */
 const recentResults = new Map<string, ApplyPreviewResult>();
 const REQUEST_DEDUP_MAX = 128;
 
-function remember(requestId: string, result: ApplyPreviewResult): void {
-  recentResults.set(requestId, result);
+function dedupeKey(agentId: string, sessionKey: string, requestId: string): string {
+  return `${agentId}::${sessionKey}::${requestId}`;
+}
+
+function remember(
+  agentId: string,
+  sessionKey: string,
+  requestId: string,
+  result: ApplyPreviewResult,
+): void {
+  recentResults.set(dedupeKey(agentId, sessionKey, requestId), result);
   if (recentResults.size > REQUEST_DEDUP_MAX) {
     const first = recentResults.keys().next().value;
     if (typeof first === "string") {
@@ -83,7 +93,7 @@ export async function runApplyPreview(deps: {
   }
 
   const requestId = deps.input.requestId?.trim() || `apply_${crypto.randomUUID().replace(/-/g, "")}`;
-  const cached = recentResults.get(requestId);
+  const cached = recentResults.get(dedupeKey(deps.agentId, deps.sessionKey, requestId));
   if (cached !== undefined) {
     return cached;
   }
@@ -95,7 +105,7 @@ export async function runApplyPreview(deps: {
       code: "forbidden_property",
       message: validated.message,
     };
-    remember(requestId, result);
+    remember(deps.agentId, deps.sessionKey, requestId, result);
     return result;
   }
 
@@ -107,7 +117,7 @@ export async function runApplyPreview(deps: {
       code: "not_found",
       message: "Selektion nicht gefunden",
     };
-    remember(requestId, result);
+    remember(deps.agentId, deps.sessionKey, requestId, result);
     return result;
   }
 
@@ -117,7 +127,7 @@ export async function runApplyPreview(deps: {
       code: "browser_unavailable",
       message: "Kein gekoppelter Browser verfügbar",
     };
-    remember(requestId, result);
+    remember(deps.agentId, deps.sessionKey, requestId, result);
     return result;
   }
 
@@ -128,6 +138,7 @@ export async function runApplyPreview(deps: {
     selectionId: selection.id,
     selector: selection.selector,
     styles: validated.styles.map((s) => ({ property: s.property, value: s.value })),
+    pageUrl: selection.pageUrl,
   };
 
   const browserResult = await deps.browser.apply(command);
@@ -137,7 +148,7 @@ export async function runApplyPreview(deps: {
       code: browserResult.code,
       message: browserResult.message,
     };
-    remember(requestId, result);
+    remember(deps.agentId, deps.sessionKey, requestId, result);
     return result;
   }
 
@@ -153,7 +164,7 @@ export async function runApplyPreview(deps: {
       code: "not_found",
       message: recorded.message,
     };
-    remember(requestId, result);
+    remember(deps.agentId, deps.sessionKey, requestId, result);
     return result;
   }
 
@@ -165,7 +176,7 @@ export async function runApplyPreview(deps: {
     applied: browserResult.applied,
     uncommittedPreview: true,
   };
-  remember(requestId, result);
+  remember(deps.agentId, deps.sessionKey, requestId, result);
   return result;
 }
 

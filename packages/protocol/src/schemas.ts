@@ -201,6 +201,7 @@ export const BridgeHelloAckSchema = Type.Object(
     requestId: Type.String({ minLength: 1, maxLength: 128 }),
     connectionId: Type.String({ minLength: 1, maxLength: 128 }),
     protocolVersion: Type.Literal(PROTOCOL_VERSION),
+    previewEditingEnabled: Type.Boolean(),
   },
   { additionalProperties: false },
 );
@@ -211,6 +212,7 @@ export type BridgeHelloAck = {
   requestId: string;
   connectionId: string;
   protocolVersion: 1;
+  previewEditingEnabled: boolean;
 };
 
 /** C-005 activeSession.changed (plugin → extension) */
@@ -227,6 +229,7 @@ export const ActiveSessionChangedSchema = Type.Object(
       Type.Literal("none"),
       Type.Literal("ambiguous"),
     ]),
+    previewEditingEnabled: Type.Boolean(),
   },
   { additionalProperties: false },
 );
@@ -239,6 +242,7 @@ export type ActiveSessionChanged = {
   agentId: string | null;
   title?: string | null;
   status: "active" | "none" | "ambiguous";
+  previewEditingEnabled: boolean;
 };
 
 /** C-006 selection.create */
@@ -401,6 +405,8 @@ export const PreviewApplyCommandSchema = Type.Object(
     selectionId: Type.String({ minLength: 1, maxLength: 128 }),
     selector: Type.String({ minLength: 1, maxLength: 8192 }),
     styles: Type.Array(PreviewStyleSchema, { minItems: 1, maxItems: 32 }),
+    /** Optional page URL for extension tab routing when selection→tab map is cold. */
+    pageUrl: Type.Optional(Type.String({ maxLength: 4096 })),
   },
   { additionalProperties: false },
 );
@@ -412,6 +418,7 @@ export type PreviewApplyCommand = {
   selectionId: string;
   selector: string;
   styles: Array<{ property: string; value: string }>;
+  pageUrl?: string;
 };
 
 /** Extension → plugin: apply result (C-015). */

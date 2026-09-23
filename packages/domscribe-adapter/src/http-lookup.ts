@@ -7,6 +7,7 @@
  */
 
 import type { DomscribeLookup, DomscribeManifestEntry } from "./types.js";
+import { validateDomscribeRelayUrl } from "./relay-url.js";
 
 export const DEFAULT_RELAY_HEALTH_TIMEOUT_MS = 500;
 
@@ -116,7 +117,11 @@ async function fetchJson(
 }
 
 export function createHttpRelayLookup(options: HttpRelayLookupOptions): DomscribeLookup {
-  const base = options.baseUrl.replace(/\/$/, "");
+  const validated = validateDomscribeRelayUrl(options.baseUrl);
+  if (!validated.ok) {
+    throw new Error(validated.message);
+  }
+  const base = validated.url;
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_RELAY_HEALTH_TIMEOUT_MS;
 

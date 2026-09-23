@@ -18,6 +18,7 @@ import {
   clearVisualBatch,
   expireBatch,
   redactText,
+  redactUnknownStrings,
   DOM_SNAPSHOT_MAX_BYTES,
   RUNTIME_SUMMARY_MAX_BYTES,
   SELECTION_JSON_MAX_BYTES,
@@ -34,15 +35,46 @@ function draftInput(overrides: Partial<Parameters<typeof admitSelection>[0]> = {
 }
 
 describe("T-001 limits / dedup / state / redaction", () => {
-  it("redacts email, sk-, ghp_, and Bearer tokens", () => {
+  it("redacts email, sk-, ghp_, Bearer, AWS, Slack, npm, and github_pat tokens", () => {
     const raw =
-      "contact me@example.com with sk-abc123456789 and ghp_abcdefghijklmnopqrstuv and Bearer eyJhbGciOiJIUzI1NiJ9.aa";
+      "contact me@example.com with sk-abc123456789 and ghp_abcdefghijklmnopqrstuv and Bearer eyJhbGciOiJIUzI1NiJ9.aa and AKIAIOSFODNN7EXAMPLE and xoxb-1234567890-abcdefghij and npm_abcdefghijklmnopqrstuv and github_pat_abcdefghijklmnopqrstuv";
     const redacted = redactText(raw);
     assert.equal(redacted.includes("me@example.com"), false);
     assert.equal(redacted.includes("sk-abc"), false);
     assert.equal(redacted.includes("ghp_abcd"), false);
+    assert.equal(redacted.includes("AKIA"), false);
+    assert.equal(redacted.includes("xoxb-"), false);
+    assert.equal(redacted.includes("npm_abc"), false);
+    assert.equal(redacted.includes("github_pat_"), false);
     assert.match(redacted, /Bearer \[REDACTED_TOKEN\]/);
     assert.match(redacted, /\[REDACTED_EMAIL\]/);
+    assert.match(redacted, /\[REDACTED_AWS_KEY\]/);
+    assert.match(redacted, /\[REDACTED_SLACK_TOKEN\]/);
+    assert.match(redacted, /\[REDACTED_NPM_TOKEN\]/);
+    assert.match(redacted, /\[REDACTED_GITHUB_PAT\]/);
+  });
+
+  it("sanitizes pageUrl credentials and sensitive query params", () => {
+    const admitted = admitSelection(
+      draftInput({
+        pageUrl:
+          "https://user:pass@example.com/path?token=secret&ok=1&api_key=xyz&jwt=abc&session=1",
+      }),
+    );
+    assert.equal(admitted.pageUrl.includes("user:pass"), false);
+    assert.match(admitted.pageUrl, /token=%5BREDACTED%5D|token=\[REDACTED\]/);
+    assert.match(admitted.pageUrl, /api_key=%5BREDACTED%5D|api_key=\[REDACTED\]/);
+    assert.match(admitted.pageUrl, /jwt=%5BREDACTED%5D|jwt=\[REDACTED\]/);
+    assert.match(admitted.pageUrl, /session=%5BREDACTED%5D|session=\[REDACTED\]/);
+    assert.match(admitted.pageUrl, /ok=1/);
+  });
+
+  it("redactUnknownStrings skips prototype pollution keys", () => {
+    const polluted = JSON.parse('{"safe":"a@b.co","__proto__":{"x":1},"constructor":{"y":2}}');
+    const out = redactUnknownStrings(polluted) as Record<string, unknown>;
+    assert.equal(Object.prototype.hasOwnProperty.call(out, "__proto__"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(out, "constructor"), false);
+    assert.match(String(out.safe), /REDACTED_EMAIL/);
   });
 
   it("rejects oversized DOM snapshot", () => {

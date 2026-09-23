@@ -60,6 +60,40 @@ describe("T-004 pairing + bridge selection", () => {
     assert.equal(pairing.authenticateToken(completed.token), undefined);
   });
 
+  it("rate-limits pairing.complete after 10 failures per extensionInstanceId", () => {
+    const pairing = new PairingStore(() => 2_000_000);
+    for (let i = 0; i < 10; i += 1) {
+      const denied = pairing.complete({
+        code: "BADCODE1",
+        extensionInstanceId: "ext-rl",
+        protocolVersion: 1,
+      });
+      assert.equal(denied.ok, false);
+      if (!denied.ok) {
+        assert.equal(denied.code, "invalid_code");
+      }
+    }
+    const limited = pairing.complete({
+      code: "BADCODE1",
+      extensionInstanceId: "ext-rl",
+      protocolVersion: 1,
+    });
+    assert.equal(limited.ok, false);
+    if (!limited.ok) {
+      assert.equal(limited.code, "rate_limited");
+    }
+    // Different extension is not blocked by the other instance's failure window.
+    const other = pairing.complete({
+      code: "BADCODE1",
+      extensionInstanceId: "ext-other",
+      protocolVersion: 1,
+    });
+    assert.equal(other.ok, false);
+    if (!other.ok) {
+      assert.equal(other.code, "invalid_code");
+    }
+  });
+
   it("expires pairing codes", () => {
     let now = 1_000;
     const pairing = new PairingStore(() => now, 100);

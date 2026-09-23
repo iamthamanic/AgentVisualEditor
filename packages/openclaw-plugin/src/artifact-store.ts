@@ -10,6 +10,9 @@ import {
 } from "@agent-visual-editor/core";
 import { createHash } from "node:crypto";
 
+export const ARTIFACT_MAX_GLOBAL = 50;
+export const ARTIFACT_MAX_PER_SESSION = 10;
+
 export type StoredScreenshotArtifact = ScreenshotArtifactMeta & {
   agentId: string;
   sessionKey: string;
@@ -33,7 +36,7 @@ export type ArtifactPutInput = {
 
 export type ArtifactPutResult =
   | { ok: true; artifact: StoredScreenshotArtifact; deduped: boolean }
-  | { ok: false; code: "too_large" | "invalid_type"; message: string };
+  | { ok: false; code: "too_large" | "invalid_type" | "limit_reached"; message: string };
 
 function hashPng(png: Buffer): string {
   return createHash("sha256").update(png).digest("hex");
@@ -42,6 +45,29 @@ function hashPng(png: Buffer): string {
 export class ArtifactStore {
   private readonly byId = new Map<string, StoredScreenshotArtifact>();
   private readonly byHashKey = new Map<string, string>();
+
+  private purgeExpired(nowMs: number): void {
+    for (const [id, artifact] of this.byId) {
+      if (Date.parse(artifact.expiresAt) <= nowMs) {
+        this.byId.delete(id);
+      }
+    }
+    for (const [key, id] of this.byHashKey) {
+      if (!this.byId.has(id)) {
+        this.byHashKey.delete(key);
+      }
+    }
+  }
+
+  private countForSession(agentId: string, sessionKey: string): number {
+    let n = 0;
+    for (const artifact of this.byId.values()) {
+      if (artifact.agentId === agentId && artifact.sessionKey === sessionKey) {
+        n += 1;
+      }
+    }
+    return n;
+  }
 
   put(input: ArtifactPutInput): ArtifactPutResult {
     if (input.png.byteLength === 0) {
@@ -66,6 +92,8 @@ export class ArtifactStore {
     }
 
     const now = input.nowMs ?? Date.now();
+    this.purgeExpired(now);
+
     const ttl = input.ttlMs ?? ARTIFACT_TTL_MS;
     const contentHash = input.contentHash ?? hashPng(input.png);
     const hashKey = `${input.agentId}::${input.sessionKey}::${input.selectionId}::${contentHash}`;
@@ -79,6 +107,21 @@ export class ArtifactStore {
       if (existing) {
         this.byId.delete(existingId);
       }
+    }
+
+    if (this.byId.size >= ARTIFACT_MAX_GLOBAL) {
+      return {
+        ok: false,
+        code: "limit_reached",
+        message: `Maximal ${ARTIFACT_MAX_GLOBAL} Artifacts erlaubt`,
+      };
+    }
+    if (this.countForSession(input.agentId, input.sessionKey) >= ARTIFACT_MAX_PER_SESSION) {
+      return {
+        ok: false,
+        code: "limit_reached",
+        message: `Maximal ${ARTIFACT_MAX_PER_SESSION} Artifacts pro Session erlaubt`,
+      };
     }
 
     const id = `ave_art_${crypto.randomUUID().replace(/-/g, "")}`;

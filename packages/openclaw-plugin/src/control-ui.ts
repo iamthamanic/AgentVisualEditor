@@ -228,11 +228,15 @@ export default defineControlUiPlugin({
 
         const reportSession = async () => {
           try {
-            await feature.invoke("report_active_session", {
-              sessionKey: current.props.sessionKey,
-              agentId: current.props.agentId,
-              title: null,
-            });
+            await feature.invoke(
+              "report_active_session",
+              {
+                sessionKey: current.props.sessionKey,
+                agentId: current.props.agentId,
+                title: null,
+              },
+              { sessionKey: current.props.sessionKey, agentId: current.props.agentId },
+            );
           } catch {
             // Non-fatal: extension targeting degrades to no_active_session.
           }
@@ -477,11 +481,17 @@ export default defineControlUiPlugin({
           dispose() {
             disposed = true;
             watchDispose?.();
-            void feature.invoke("report_active_session", {
-              sessionKey: null,
-              agentId: null,
-              title: null,
-            }).catch(() => undefined);
+            void feature
+              .invoke(
+                "report_active_session",
+                {
+                  sessionKey: null,
+                  agentId: null,
+                  title: null,
+                },
+                { sessionKey: current.props.sessionKey, agentId: current.props.agentId },
+              )
+              .catch(() => undefined);
             unmountDefault();
             root.remove();
           },
