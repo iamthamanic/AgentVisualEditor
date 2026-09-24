@@ -46,6 +46,39 @@ function rawDataToUtf8(data: RawData): string {
   return Buffer.from(new Uint8Array(data)).toString("utf8");
 }
 
+function unknownObjectFields(value: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    out[key] = entry;
+  }
+  return out;
+}
+
+/** Technical detail for schema failures — UI maps this to plain German. */
+function describePairingCompleteFailure(body: unknown): string {
+  if (typeof body !== "object" || body === null) {
+    return "pairing.complete failed schema validation (body not an object)";
+  }
+  const source = unknownObjectFields(body);
+  const code = typeof source.code === "string" ? source.code.trim() : "";
+  if (code.length === 0) {
+    return "pairing.complete failed schema validation (code missing)";
+  }
+  if (code.length < 6) {
+    return `pairing.complete failed schema validation (code too short: ${code.length} chars, need ≥6)`;
+  }
+  if (code.length > 32) {
+    return "pairing.complete failed schema validation (code too long, max 32)";
+  }
+  if (typeof source.extensionInstanceId !== "string" || source.extensionInstanceId.length === 0) {
+    return "pairing.complete failed schema validation (extensionInstanceId missing)";
+  }
+  if (source.protocolVersion !== undefined && source.protocolVersion !== PROTOCOL_VERSION) {
+    return `pairing.complete failed schema validation (protocolVersion=${String(source.protocolVersion)}, expected ${PROTOCOL_VERSION})`;
+  }
+  return "pairing.complete failed schema validation";
+}
+
 type JsonBody = Record<string, unknown>;
 
 type PluginHttpRouteApi = {
@@ -436,7 +469,7 @@ export class BridgeHub {
     // Whitelist pairing.complete fields only (ignore unknown keys).
     let normalized: unknown = body;
     if (typeof body === "object" && body !== null) {
-      const source = body as Record<string, unknown>;
+      const source = unknownObjectFields(body);
       const record: JsonBody = {
         type: "pairing.complete",
         protocolVersion:
@@ -458,7 +491,11 @@ export class BridgeHub {
 
     const parsed = parsePairingComplete(normalized);
     if (!parsed.ok) {
-      sendJson(res, 400, parsed.error);
+      sendJson(res, 400, {
+        ok: false,
+        code: "invalid_message",
+        message: describePairingCompleteFailure(normalized),
+      } satisfies ErrorEnvelope);
       return true;
     }
 

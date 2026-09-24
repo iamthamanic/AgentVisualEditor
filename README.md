@@ -6,6 +6,10 @@ Selection, chip attach/remove, and preview edits **never** start an agent run â€
 
 **MVP (SLC-1..7):** native chips, secure bridge, send-context tools, optional Domscribe mapping, visual preview edits, closed-loop apply/resolve, and **adapter-boundary CI** so a future MCP adapter can reuse `core`/`protocol` (FR-031).
 
+## Recent changes
+
+- **2026-09-24** â€” Extension side panel: Cursor-like dark disclosures, local-first Visual Inspector with element preview + copy, plain-language pairing errors, screenshot capture queue (`feat/extension-sidepanel-inspector-ux`)
+
 ## Packages
 
 | Package | Role |

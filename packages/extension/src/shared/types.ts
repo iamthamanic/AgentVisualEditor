@@ -40,6 +40,8 @@ export type CapturedSelection = {
   page: { url: string; title?: string };
   element: CapturedElement;
   tabId?: string;
+  /** window.devicePixelRatio at capture time (for preview crop). */
+  devicePixelRatio?: number;
 };
 
 export type VisualChangePayload = {
@@ -71,6 +73,14 @@ export type ExtensionToBackground =
   | { type: "set_inspect"; enabled: boolean }
   | { type: "remove_selection"; selectionId: string }
   | { type: "get_status" }
+  | { type: "selection_preview_retry" }
+  | {
+      type: "selection_preview_result";
+      selectionId: string;
+      ok: boolean;
+      previewDataUrl?: string;
+      message?: string;
+    }
   | {
       type: "preview_edit";
       selectionId: string;
@@ -101,6 +111,32 @@ export type ExtensionToBackground =
       box?: { x: number; y: number; width: number; height: number };
     };
 
+export type LastSelectionSummary = {
+  id: string;
+  tag: string;
+  selector: string;
+  pageUrl: string;
+  pageTitle?: string;
+  textSummary?: string;
+  box?: { x: number; y: number; width: number; height: number };
+  /** Cropped element PNG as data URL for side-panel preview. */
+  previewDataUrl?: string;
+  previewStatus?: "pending" | "ready" | "failed";
+  previewError?: string;
+  devicePixelRatio?: number;
+  /** True when selection was acknowledged by OpenClaw bridge. */
+  synced: boolean;
+};
+
+/** One-shot viewport frame for the side panel to crop locally. */
+export type SelectionPreviewFrame = {
+  type: "selection_preview_frame";
+  selectionId: string;
+  viewportDataUrl: string;
+  box: { x: number; y: number; width: number; height: number };
+  devicePixelRatio: number;
+};
+
 export type BackgroundToUi = {
   type: "status";
   connection: ConnectionState;
@@ -109,14 +145,18 @@ export type BackgroundToUi = {
   inspectEnabled: boolean;
   lastSelectionId: string | null;
   lastSelector: string | null;
+  lastSelection: LastSelectionSummary | null;
   lastError: string | null;
   paired: boolean;
   previewEditingEnabled: boolean;
   lastArtifactId: string | null;
 };
 
+export type BackgroundPush = BackgroundToUi | SelectionPreviewFrame;
+
 export type ContentToBackground =
   | { type: "selection_captured"; selection: CapturedSelection }
+  | { type: "content_ready" }
   | {
       type: "inspect_limitation";
       code?: NonNullable<CapturedElement["limitation"]>;
