@@ -42,9 +42,9 @@
     "onStartup": true
   },
   "controlUi": {
-    "entry": "dist/control-ui/95807085d97a803c9621f43d3c1c8b912d25afdb86dbfc6e9d74521064eec877/index.js",
+    "entry": "dist/control-ui/e5c051f7d8be775043d757794e14b77ac7d82c44a751af0d68c55d3c5f3a516a/index.js",
     "styles": [
-      "dist/control-ui/95807085d97a803c9621f43d3c1c8b912d25afdb86dbfc6e9d74521064eec877/index.css"
+      "dist/control-ui/e5c051f7d8be775043d757794e14b77ac7d82c44a751af0d68c55d3c5f3a516a/index.css"
     ]
   },
   "contracts": {

@@ -30,6 +30,7 @@ await esbuild.build({
 
 cpSync(join(root, "src/sidepanel/sidepanel.html"), join(outDir, "sidepanel.html"));
 cpSync(join(root, "src/sidepanel/sidepanel.css"), join(outDir, "sidepanel.css"));
+cpSync(join(root, "src/icons"), join(outDir, "icons"), { recursive: true });
 
 const manifest = JSON.parse(readFileSync(join(root, "src/manifest.json"), "utf8"));
 writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

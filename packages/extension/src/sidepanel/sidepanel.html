@@ -8,8 +8,17 @@
   </head>
   <body>
     <header class="ave-header">
-      <h1>AgentVisualEditor</h1>
-      <p class="ave-subtitle">Side Panel</p>
+      <div class="ave-header__main">
+        <h1>AgentVisualEditor</h1>
+        <p class="ave-subtitle">Side Panel</p>
+      </div>
+      <label class="ave-lang" title="Language">
+        <span class="ave-lang__label" id="langLabel">Sprache</span>
+        <select id="langSelect" class="ave-lang__select" aria-label="Language">
+          <option value="de">🇩🇪 Deutsch</option>
+          <option value="en">🇺🇸 English</option>
+        </select>
+      </label>
     </header>
 
     <section class="ave-status-card" aria-live="polite">

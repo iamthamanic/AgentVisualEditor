@@ -6,9 +6,28 @@ Selection, chip attach/remove, and preview edits **never** start an agent run �
 
 **MVP (SLC-1..7):** native chips, secure bridge, send-context tools, optional Domscribe mapping, visual preview edits, closed-loop apply/resolve, and **adapter-boundary CI** so a future MCP adapter can reuse `core`/`protocol` (FR-031).
 
+UI language: side panel has a **🇩🇪/🇺🇸** dropdown (persisted); OpenClaw Control UI follows the browser/OpenClaw locale (`de*` → German, else English).
+
 ## Recent changes
 
+- **2026-09-24** — AVE+eye icons, DE/EN side-panel language dropdown (🇩🇪/🇺🇸), OpenClaw UI i18n, ClawHub/Chrome Web Store install guide (`feat/icons-i18n-install-docs`)
 - **2026-09-24** — Extension side panel: Cursor-like dark disclosures, local-first Visual Inspector with element preview + copy, plain-language pairing errors, screenshot capture queue (`feat/extension-sidepanel-inspector-ux`)
+
+## Install / publish checklist
+
+| Goal | Guide |
+|------|--------|
+| Local plugin + extension (dev) | [docs/setup.md](./docs/setup.md) |
+| **OpenClaw Cloud / ClawHub + Chrome Web Store** (DE + EN, detailed) | **[docs/install-openclaw-cloud.md](./docs/install-openclaw-cloud.md)** |
+| Ops / incidents | [docs/runbook.md](./docs/runbook.md) |
+
+### Still todo before “public”
+
+1. **ClawHub:** `private: false`, scoped `package.json` name, `clawhub package publish` → install with `openclaw plugins install clawhub:…` on the Cloud gateway.  
+2. **Chrome Web Store:** developer account, zip `packages/extension/dist-ext`, screenshots, privacy URL, justify `<all_urls>`, submit review.  
+3. Cloud gateway must expose a **reachable** bridge URL (HTTPS/WSS) for the browser extension.
+
+Until then: local `openclaw plugins install .` + unpacked extension works.
 
 ## Packages
 
@@ -38,25 +57,23 @@ npm run check:licenses
 cd packages/openclaw-plugin && npm run build && npm run validate
 ```
 
-## Setup / Health / Pairing
-
-See **[docs/setup.md](./docs/setup.md)** for plugin install, Labs Custom Plugin UI, extension load, pairing, and the FR-028 health checklist.
-
-Short path:
+## Setup / Health / Pairing (short)
 
 ```bash
 cd packages/openclaw-plugin && npm run build && openclaw plugins install .
 cd ../extension && npm run build   # load packages/extension/dist-ext unpacked
 ```
 
-Enable **Settings → Labs → Custom plugin UI**, then choose **AVE Composer mit Chips**.
+Enable **Settings → Labs → Custom plugin UI**, then choose **AVE Composer mit Chips** / **AVE Composer with chips**.
+
+Full checklist: [docs/setup.md](./docs/setup.md). Cloud/store: [docs/install-openclaw-cloud.md](./docs/install-openclaw-cloud.md).
 
 ## Feature flags
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `composerUiEnabled` | `true` | Composer chip UI (needs Labs flag) |
-| `testSelectionEnabled` | `false` | Debug **Test-Selektion** |
+| `testSelectionEnabled` | `false` | Debug **Test selection** button |
 | `agentPreviewApplyEnabled` | `false` | Agent `apply_preview` (C-015) |
 | `domscribeEnabled` | `true` | Source mapping; absence = degraded |
 
@@ -76,11 +93,10 @@ MIT — [LICENSE](./LICENSE). Third-party / Design Mode / Domscribe notices: [TH
 
 ## Docs
 
+- [docs/install-openclaw-cloud.md](./docs/install-openclaw-cloud.md) — **OpenClaw Cloud + Chrome Web Store (DE/EN)**
 - [docs/PRD.md](./docs/PRD.md)
 - [docs/setup.md](./docs/setup.md)
 - [docs/runbook.md](./docs/runbook.md)
 - [docs/architecture.md](./docs/architecture.md)
 - [docs/compatibility.md](./docs/compatibility.md)
 - [docs/privacy.md](./docs/privacy.md)
-- [`.qa/design/slc-7.md`](./.qa/design/slc-7.md)
-- [`.qa/acceptance/slc-7-adapter-boundary-docs.md`](./.qa/acceptance/slc-7-adapter-boundary-docs.md)

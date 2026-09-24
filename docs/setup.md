@@ -36,6 +36,8 @@ npm run build
 
 In Chrome: `chrome://extensions` → Developer mode → **Load unpacked** → select `packages/extension/dist-ext`.
 
+After pulling updates: rebuild, then **Reload** the extension card (and refresh open tabs).
+
 ## Pairing
 
 1. In OpenClaw AgentVisualEditor settings/page, start pairing and copy the one-time code.
@@ -59,3 +61,16 @@ Revoke tokens from the plugin settings if a device is lost (runbook: pairing com
 ## Rollback
 
 See [runbook.md](./runbook.md#plugin-upgrade-breaks-composer) — select Built-in composer anytime.
+
+## Chrome Web Store (production packaging)
+
+Unpacked Developer Mode is enough for your own machine. For a public listing:
+
+1. Chrome Web Store **developer account** (one-time registration fee).
+2. Build a clean zip of `packages/extension/dist-ext` (omit `*.map` if you want smaller packages).
+3. Store assets: **128×128** icon (already in `icons/icon-128.png`), **512×512** promo optional (`icons/icon-512.png`), screenshots of side panel + Inspect Mode.
+4. Listing copy: name, short/long description, privacy policy URL (link [docs/privacy.md](./privacy.md) or a hosted page). Declare **host permission `<all_urls>`** honestly — reviewers scrutinize broad host access; explain Inspect + element preview screenshots.
+5. Submit for review; expect questions about why every site is needed.
+6. Version bumps: raise `manifest.json` `version` before each store upload.
+
+OpenClaw itself is **not** distributed via the Chrome Web Store — only the extension. Keep installing the plugin with `openclaw plugins install .` on the Gateway host.
