@@ -8,12 +8,24 @@
 import { PreviewChangeTracker } from "../editor/change-tracker.js";
 import { cropElementPreviewInDom } from "../editor/element-preview.js";
 import { explainError } from "../shared/user-errors.js";
+import {
+  sidepanelStrings,
+  resolveUiLocale,
+  loadStoredUiLocale,
+  saveUiLocale,
+  type UiLocale,
+  type SidepanelStrings,
+} from "../shared/ui-i18n.js";
 import type {
   BackgroundToUi,
   ConnectionState,
   SelectionPreviewFrame,
   VisualChangePayload,
 } from "../shared/types.js";
+
+let locale: UiLocale = resolveUiLocale();
+let t: SidepanelStrings = sidepanelStrings(locale);
+document.documentElement.lang = locale;
 
 function requireHtml(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -102,6 +114,8 @@ const pairLabel = pair.querySelector(".ave-btn-label");
 const pairConfetti = requireHtml("pairConfetti");
 const disconnect = requireButton("disconnectBtn");
 const inspectDetails = requireHtml("inspectDetails");
+const langSelect = document.getElementById("langSelect");
+const langLabel = document.getElementById("langLabel");
 
 function openConnectionPanel(): void {
   if (connDetails instanceof HTMLDetailsElement) {
@@ -138,36 +152,127 @@ let currentStatus: BackgroundToUi | null = null;
 let pairCelebratePending = false;
 let lastConnectionState: ConnectionState | null = null;
 
-const CONNECTION_LABELS: Record<ConnectionState, string> = {
-  disconnected: "Getrennt",
-  connecting: "Verbindet…",
-  connected: "Verbunden",
-  reconnecting: "Reconnect…",
-  re_pair_required: "Erneut koppeln",
+let CONNECTION_LABELS: Record<ConnectionState, string> = {
+  disconnected: t.disconnected,
+  connecting: t.connecting,
+  connected: t.connected,
+  reconnecting: t.reconnecting,
+  re_pair_required: t.pair,
 };
 
-const CONNECTION_DETAILS: Record<ConnectionState, { text: string; tone: string }> = {
-  disconnected: {
-    text: "Nicht gekoppelt — Verbindung aufklappen und Pairing-Code eingeben.",
-    tone: "muted",
-  },
-  connecting: {
-    text: "Koppelt mit Gateway…",
-    tone: "warn",
-  },
-  connected: {
-    text: "Gekoppelt — OpenClaw empfängt Selektionen und Chips.",
-    tone: "ok",
-  },
-  reconnecting: {
-    text: "Verbindung unterbrochen — versuche Reconnect…",
-    tone: "warn",
-  },
-  re_pair_required: {
-    text: "Erneut koppeln nötig — Verbindung aufklappen und neuen Code eingeben.",
-    tone: "warn",
-  },
+let CONNECTION_DETAILS: Record<ConnectionState, { text: string; tone: string }> = {
+  disconnected: { text: t.detailDisconnected, tone: "muted" },
+  connecting: { text: t.detailConnecting, tone: "warn" },
+  connected: { text: t.detailConnected, tone: "ok" },
+  reconnecting: { text: t.detailReconnecting, tone: "warn" },
+  re_pair_required: { text: t.detailDisconnected, tone: "warn" },
 };
+
+function refreshLocaleTables(): void {
+  CONNECTION_LABELS = {
+    disconnected: t.disconnected,
+    connecting: t.connecting,
+    connected: t.connected,
+    reconnecting: t.reconnecting,
+    re_pair_required: t.pair,
+  };
+  CONNECTION_DETAILS = {
+    disconnected: { text: t.detailDisconnected, tone: "muted" },
+    connecting: { text: t.detailConnecting, tone: "warn" },
+    connected: { text: t.detailConnected, tone: "ok" },
+    reconnecting: { text: t.detailReconnecting, tone: "warn" },
+    re_pair_required: { text: t.detailDisconnected, tone: "warn" },
+  };
+}
+
+function applyStaticLabels(): void {
+  document.documentElement.lang = locale;
+  if (langLabel) langLabel.textContent = t.language;
+  if (langSelect instanceof HTMLSelectElement) {
+    langSelect.value = locale;
+    langSelect.setAttribute("aria-label", t.language);
+    const wrap = langSelect.closest(".ave-lang");
+    if (wrap instanceof HTMLElement) wrap.title = t.language;
+  }
+  const subtitle = document.querySelector(".ave-subtitle");
+  if (subtitle) subtitle.textContent = t.subtitle;
+  const statusLabels = document.querySelectorAll(".ave-status-card > .ave-row > .ave-label");
+  const statusTexts = [t.openclaw, t.chat, t.domscribe];
+  statusLabels.forEach((el, i) => {
+    const text = statusTexts[i];
+    if (text) el.textContent = text;
+  });
+  const titles = document.querySelectorAll(".ave-disclosure__title");
+  const titleTexts = [t.connection, t.visualInspector, t.design, t.changes, t.screenshots];
+  titles.forEach((el, i) => {
+    const text = titleTexts[i];
+    if (text) el.textContent = text;
+  });
+  const fields = Array.from(document.querySelectorAll(".ave-disclosure__body .ave-field")).slice(
+    0,
+    2,
+  );
+  const fieldLabels = [t.gatewayUrl, t.pairingCode];
+  fields.forEach((field, i) => {
+    const input = field.querySelector("input");
+    const label = fieldLabels[i];
+    if (input && label) {
+      field.replaceChildren(document.createTextNode(`${label} `), input);
+    }
+  });
+  if (pairLabel instanceof HTMLElement) {
+    pairLabel.textContent = pair.disabled ? t.paired : t.pair;
+  }
+  disconnect.textContent = t.disconnect;
+  selectionPreviewRetry.textContent = t.retryPreview;
+  if (copySelectionBtn.dataset.copied !== "true") {
+    copySelectionBtn.textContent = t.copy;
+  }
+  applyDesignBtn.textContent = t.apply;
+  undoBtn.textContent = t.undo;
+  redoBtn.textContent = t.redo;
+  clearAllBtn.textContent = t.clear;
+  shotViewportBtn.textContent = t.captureViewport;
+  shotElementBtn.textContent = t.captureElement;
+  const modeLabel = document.querySelector(".ave-row-toggle .ave-label");
+  if (modeLabel) modeLabel.textContent = t.mode;
+  const selHead = document.querySelector(".ave-selection-card__head .ave-label");
+  if (selHead) selHead.textContent = t.selection;
+  const selLabels = selectionCard.querySelectorAll(".ave-row > .ave-label");
+  const selTexts = [t.element, t.text, t.selector, t.page, t.size];
+  selLabels.forEach((el, i) => {
+    const text = selTexts[i];
+    if (text) el.textContent = text;
+  });
+  toggle.textContent = toggle.getAttribute("aria-pressed") === "true" ? t.on : t.off;
+}
+
+async function setLocale(next: UiLocale): Promise<void> {
+  locale = next;
+  t = sidepanelStrings(locale);
+  refreshLocaleTables();
+  await saveUiLocale(locale);
+  applyStaticLabels();
+  if (currentStatus) {
+    render(currentStatus);
+  }
+}
+
+applyStaticLabels();
+
+void loadStoredUiLocale().then((stored) => {
+  if (stored !== locale) {
+    void setLocale(stored);
+  } else if (langSelect instanceof HTMLSelectElement) {
+    langSelect.value = locale;
+  }
+});
+
+if (langSelect instanceof HTMLSelectElement) {
+  langSelect.addEventListener("change", () => {
+    void setLocale(langSelect.value === "de" ? "de" : "en");
+  });
+}
 
 const CONFETTI_COLORS = ["#ffffff", "#ededed", "#a3a3a3", "#3dd68c", "#8a8a8a", "#c9a227"];
 
@@ -207,11 +312,11 @@ function setPairButtonPaired(paired: boolean): void {
     return;
   }
   if (paired) {
-    pairLabel.textContent = "Gekoppelt ✓";
+    pairLabel.textContent = t.paired;
     pair.disabled = true;
     pair.classList.add("ave-btn--paired");
   } else {
-    pairLabel.textContent = "Koppeln";
+    pairLabel.textContent = t.pair;
     pair.disabled = false;
     pair.classList.remove("ave-btn--paired");
   }
@@ -294,7 +399,7 @@ function render(status: BackgroundToUi): void {
   if (paired && pairCelebratePending) {
     setPairButtonPaired(true);
     burstConfetti();
-    setPairBanner("ok", "Gekoppelt — Verbindung steht.");
+    setPairBanner("ok", t.detailConnected);
     pairCelebratePending = false;
   } else if (paired) {
     setPairButtonPaired(true);
@@ -305,22 +410,22 @@ function render(status: BackgroundToUi): void {
   if (status.chat.status === "active" && status.chat.sessionKey) {
     chat.textContent = status.chat.title ?? status.chat.sessionKey.slice(0, 24);
   } else if (status.chat.status === "ambiguous") {
-    chat.textContent = "Mehrere Chats — Auswahl unklar";
+    chat.textContent = t.ambiguousChat;
   } else {
-    chat.textContent = "Kein aktiver Chat";
+    chat.textContent = t.noActiveChat;
   }
 
   domscribe.textContent =
     status.domscribe === "unavailable"
-      ? "Quellzuordnung nicht verfügbar"
+      ? t.domscribeUnavailable
       : status.domscribe === "available"
-        ? "Quellzuordnung verfügbar"
+        ? t.domscribeAvailable
         : status.domscribe === "stale"
-          ? "Quellzuordnung veraltet"
-          : "Quellzuordnung-Fehler";
+          ? t.domscribeStale
+          : t.domscribeError;
 
   toggle.setAttribute("aria-pressed", status.inspectEnabled ? "true" : "false");
-  toggle.textContent = status.inspectEnabled ? "AN" : "AUS";
+  toggle.textContent = status.inspectEnabled ? t.on : t.off;
 
   const sel = status.lastSelection;
   if (sel) {
@@ -340,10 +445,10 @@ function render(status: BackgroundToUi): void {
       ? `${sel.box.width}×${sel.box.height}px`
       : "—";
     selectionSync.textContent = sel.synced
-      ? "An OpenClaw gesendet (Chip)."
+      ? t.syncedChip
       : status.connection === "connected"
-        ? "Lokal ausgewählt — Sync mit OpenClaw…"
-        : "Lokal ausgewählt — OpenClaw nicht verbunden (kein Chip).";
+        ? t.localSyncing
+        : t.localNoOpenClaw;
 
     selectionPreviewRetry.hidden = sel.previewStatus !== "failed";
     if (sel.previewStatus === "ready" && sel.previewDataUrl && selectionPreview instanceof HTMLImageElement) {
@@ -359,7 +464,7 @@ function render(status: BackgroundToUi): void {
       selectionPreviewStatus.hidden = false;
       selectionPreviewStatus.textContent = sel.previewError?.trim()
         ? sel.previewError
-        : "Vorschau wird erzeugt…";
+        : t.previewPending;
       if (selectionPreview instanceof HTMLImageElement) {
         selectionPreview.removeAttribute("src");
       }
@@ -368,8 +473,8 @@ function render(status: BackgroundToUi): void {
       selectionPreview.hidden = true;
       selectionPreviewStatus.hidden = false;
       selectionPreviewStatus.textContent = sel.previewError
-        ? `Vorschau fehlgeschlagen: ${sel.previewError}`
-        : "Vorschau nicht verfügbar";
+        ? `${t.previewFailed}: ${sel.previewError}`
+        : t.previewUnavailable;
       if (selectionPreview instanceof HTMLImageElement) {
         selectionPreview.removeAttribute("src");
       }
@@ -386,17 +491,15 @@ function render(status: BackgroundToUi): void {
     hint.hidden = false;
     selectionPreviewWrap.hidden = true;
     selectionPreviewStatus.hidden = true;
-    hint.textContent = status.inspectEnabled
-      ? "Inspector AN — Element auf der Seite anklicken."
-      : "Kein Element ausgewählt — Inspector AN, dann Element auf der Seite anklicken.";
+    hint.textContent = status.inspectEnabled ? t.inspectHintOn : t.inspectHintOff;
   }
 
   const hasSelection = Boolean(status.lastSelectionId && status.lastSelector);
   designSelection.textContent = hasSelection && sel
-    ? `<${sel.tag}> · ${sel.selector}`
+    ? t.designFor(sel.tag)
     : hasSelection
-      ? `Selektion ${status.lastSelectionId}`
-      : "Zuerst ein Element auswählen";
+      ? t.designFor(String(status.lastSelectionId))
+      : t.designNone;
   if (designFields instanceof HTMLFieldSetElement) {
     designFields.disabled = !status.previewEditingEnabled || !hasSelection;
   }
@@ -653,7 +756,7 @@ clearAllBtn.addEventListener("click", async () => {
 shotViewportBtn.addEventListener("click", async () => {
   const status = currentStatus;
   if (!status?.lastSelectionId) {
-    shotHint.textContent = "Zuerst eine Selektion anhängen";
+    shotHint.textContent = t.needSelectionFirst;
     return;
   }
   const result: unknown = await chrome.runtime.sendMessage({
@@ -664,7 +767,7 @@ shotViewportBtn.addEventListener("click", async () => {
   if (isRecord(result) && result.ok === false && typeof result.message === "string") {
     shotHint.textContent = result.message;
   } else {
-    shotHint.textContent = "Viewport-Screenshot hochgeladen…";
+    shotHint.textContent = t.viewportUploaded;
   }
   await refresh();
 });
@@ -672,7 +775,7 @@ shotViewportBtn.addEventListener("click", async () => {
 shotElementBtn.addEventListener("click", async () => {
   const status = currentStatus;
   if (!status?.lastSelectionId) {
-    shotHint.textContent = "Zuerst eine Selektion anhängen";
+    shotHint.textContent = t.needSelectionFirst;
     return;
   }
   const result: unknown = await chrome.runtime.sendMessage({
@@ -683,7 +786,7 @@ shotElementBtn.addEventListener("click", async () => {
   if (isRecord(result) && result.ok === false && typeof result.message === "string") {
     shotHint.textContent = result.message;
   } else {
-    shotHint.textContent = "Element-Screenshot hochgeladen…";
+    shotHint.textContent = t.elementUploaded;
   }
   await refresh();
 });
@@ -707,7 +810,7 @@ pair.addEventListener("click", async () => {
   pairCelebratePending = true;
   pair.disabled = true;
   if (pairLabel instanceof HTMLElement) {
-    pairLabel.textContent = "Koppelt…";
+    pairLabel.textContent = t.pairing;
   }
 
   const result: unknown = await chrome.runtime.sendMessage({
@@ -721,7 +824,7 @@ pair.addEventListener("click", async () => {
     setPairButtonPaired(false);
     openConnectionPanel();
     const message =
-      typeof result.message === "string" ? result.message : "Koppeln fehlgeschlagen.";
+      typeof result.message === "string" ? result.message : t.pairFailed;
     setPairBanner("error", message);
     const status = readStatusPayload(result);
     if (status) {
@@ -737,7 +840,7 @@ pair.addEventListener("click", async () => {
       pairCelebratePending = false;
       setPairButtonPaired(false);
       openConnectionPanel();
-      setPairBanner("error", "Koppeln fehlgeschlagen — Status nicht verbunden.");
+      setPairBanner("error", t.pairNotConnected);
     }
   } else {
     pairCelebratePending = false;
@@ -777,7 +880,7 @@ async function handlePreviewFrame(frame: SelectionPreviewFrame): Promise<void> {
   selectionPreviewWrap.hidden = false;
   selectionPreview.hidden = true;
   selectionPreviewStatus.hidden = false;
-  selectionPreviewStatus.textContent = "Vorschau wird zugeschnitten…";
+  selectionPreviewStatus.textContent = t.previewCropping;
 
   try {
     const cropped = await cropElementPreviewInDom(
@@ -807,7 +910,7 @@ async function handlePreviewFrame(frame: SelectionPreviewFrame): Promise<void> {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    selectionPreviewStatus.textContent = `Vorschau fehlgeschlagen: ${message}`;
+    selectionPreviewStatus.textContent = `${t.previewFailed}: ${message}`;
     const result: unknown = await chrome.runtime.sendMessage({
       type: "selection_preview_result",
       selectionId: frame.selectionId,

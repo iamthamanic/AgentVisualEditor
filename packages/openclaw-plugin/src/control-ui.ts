@@ -2,7 +2,7 @@
  * Control UI: chip region above mountDefault composer + health/pairing page.
  * Location: packages/openclaw-plugin/src/control-ui.ts
  *
- * German user-facing strings. Canonical setDraft/send only (FR-019/FR-020).
+ * DE/EN via ui-i18n. Canonical setDraft/send only (FR-019/FR-020).
  * Composer reports active session for extension targeting (C-005).
  * SLC-3: chip-region Senden wraps prepare_send → send → send_outcome (C-010/C-011).
  */
@@ -10,6 +10,7 @@
 import { defineControlUiPlugin } from "openclaw/plugin-sdk/control-ui";
 import { createFeatureClient } from "openclaw/plugin-sdk/feature-contract";
 import { contract } from "./contract.js";
+import { controlUiStrings } from "./ui-i18n.js";
 import "./control-ui.css";
 
 type ChipView = {
@@ -31,16 +32,18 @@ function emptyBatch(): BatchView {
 export default defineControlUiPlugin({
   id: contract.pluginId,
   activate(host) {
+    const t = controlUiStrings();
+
     host.ui.registerNavigation({
       id: "ave-health-nav",
-      label: "AVE Status",
+      label: t.navLabel,
       page: { id: "ave-health" },
       icon: "activity",
     });
 
     host.ui.registerPage({
       id: "ave-health",
-      label: "AVE Status",
+      label: t.pageLabel,
       mount(container) {
         const feature = createFeatureClient(contract, host);
 
@@ -48,36 +51,35 @@ export default defineControlUiPlugin({
         section.className = "ave-health-page";
 
         const heading = document.createElement("h1");
-        heading.textContent = "Agent Visual Editor";
+        heading.textContent = t.heading;
 
         const status = document.createElement("p");
         status.className = "ave-health-status";
-        status.textContent = "Lade Status…";
+        status.textContent = t.loadingStatus;
 
         const hint = document.createElement("p");
         hint.className = "ave-health-hint";
-        hint.textContent =
-          "Selektion startet keinen Agent-Lauf. Nur explizites Senden löst eine Nachricht aus.";
+        hint.textContent = t.hintNoAgentRun;
 
         const pairingBox = document.createElement("div");
         pairingBox.className = "ave-pairing-box";
 
         const pairingTitle = document.createElement("h2");
-        pairingTitle.textContent = "Extension koppeln";
+        pairingTitle.textContent = t.pairingTitle;
 
         const codeOut = document.createElement("output");
         codeOut.className = "ave-pairing-code";
         codeOut.setAttribute("aria-live", "polite");
-        codeOut.textContent = "Noch kein Code erzeugt";
+        codeOut.textContent = t.pairingCodeNone;
 
         const pairBtn = document.createElement("button");
         pairBtn.type = "button";
         pairBtn.className = "ave-pairing-start";
-        pairBtn.textContent = "Pairing-Code erzeugen";
+        pairBtn.textContent = t.pairingStart;
 
         const connList = document.createElement("ul");
         connList.className = "ave-connection-list";
-        connList.setAttribute("aria-label", "Gekoppelte Extensions");
+        connList.setAttribute("aria-label", t.pairedExtensionsAria);
 
         pairingBox.append(pairingTitle, codeOut, pairBtn, connList);
         section.append(heading, status, hint, pairingBox);
@@ -90,19 +92,20 @@ export default defineControlUiPlugin({
             const health = await feature.invoke("get_health", {});
             const connections = await feature.invoke("list_connections", {});
             if (disposed) return;
-            const domscribeDe =
+            const domscribeLabel =
               health.domscribeStatus === "available"
-                ? "Quellzuordnung verfügbar"
+                ? t.domscribeAvailable
                 : health.domscribeStatus === "stale"
-                  ? "Quellzuordnung veraltet"
+                  ? t.domscribeStale
                   : health.domscribeStatus === "error"
-                    ? "Quellzuordnung-Fehler"
-                    : "Quellzuordnung nicht verfügbar";
-            status.textContent =
-              `Plugin aktiv · Bridge ${health.bridgePath} · ` +
-              `Session: ${health.activeSessionStatus} · ` +
-              `Domscribe: ${domscribeDe} · ` +
-              `Verbindungen: ${health.pairedConnectionCount}`;
+                    ? t.domscribeError
+                    : t.domscribeUnavailable;
+            status.textContent = t.healthLine({
+              bridgePath: health.bridgePath,
+              session: health.activeSessionStatus,
+              domscribe: domscribeLabel,
+              paired: health.pairedConnectionCount,
+            });
 
             connList.replaceChildren();
             for (const row of connections.connections) {
@@ -114,7 +117,7 @@ export default defineControlUiPlugin({
                 row.extensionLabel ?? row.extensionInstanceId.slice(0, 12);
               const revoke = document.createElement("button");
               revoke.type = "button";
-              revoke.textContent = "Widerrufen";
+              revoke.textContent = t.revoke;
               revoke.onclick = async () => {
                 try {
                   await feature.invoke("connection_revoke", {
@@ -140,11 +143,11 @@ export default defineControlUiPlugin({
         pairBtn.onclick = async () => {
           try {
             const result = await feature.invoke("pairing_start", {
-              label: "Chrome Extension",
+              label: t.chromeExtensionLabel,
             });
             if (disposed) return;
             if (result.ok) {
-              codeOut.textContent = `${result.code} (gültig bis ${result.expiresAt})`;
+              codeOut.textContent = t.codeValidUntil(result.code, result.expiresAt);
               await refresh();
             } else {
               codeOut.textContent = result.message;
@@ -170,7 +173,7 @@ export default defineControlUiPlugin({
     host.ui.registerReplacement({
       id: "ave-composer-chips",
       surface: "composer",
-      label: "AVE Composer mit Chips",
+      label: t.composerLabel,
       mount(container, context) {
         let current = context;
         const feature = createFeatureClient(contract, context.host);
@@ -180,7 +183,7 @@ export default defineControlUiPlugin({
 
         const chipRegion = document.createElement("div");
         chipRegion.className = "ave-chip-region";
-        chipRegion.setAttribute("aria-label", "Visuelle Selektionen");
+        chipRegion.setAttribute("aria-label", t.chipsAria);
 
         const chipList = document.createElement("div");
         chipList.className = "ave-chip-list";
@@ -192,21 +195,20 @@ export default defineControlUiPlugin({
         const clearBtn = document.createElement("button");
         clearBtn.type = "button";
         clearBtn.className = "ave-chip-clear";
-        clearBtn.textContent = "Alle entfernen";
+        clearBtn.textContent = t.clearAll;
         clearBtn.hidden = true;
 
         const sendWithContextBtn = document.createElement("button");
         sendWithContextBtn.type = "button";
         sendWithContextBtn.className = "ave-chip-send";
-        sendWithContextBtn.textContent = "Senden";
+        sendWithContextBtn.textContent = t.send;
         sendWithContextBtn.hidden = true;
-        sendWithContextBtn.title =
-          "Sendet die Nachricht und übergibt den Visual-Kontext an den nächsten Agent-Turn";
+        sendWithContextBtn.title = t.sendTitle;
 
         const testBtn = document.createElement("button");
         testBtn.type = "button";
         testBtn.className = "ave-chip-test";
-        testBtn.textContent = "Test-Selektion";
+        testBtn.textContent = t.testSelection;
         testBtn.hidden = true;
 
         const status = document.createElement("output");
@@ -215,13 +217,10 @@ export default defineControlUiPlugin({
 
         actions.append(clearBtn, sendWithContextBtn, testBtn);
         chipRegion.append(chipList, actions, status);
-        // Empty region must not occupy layout (welcome-overlap bug).
         chipRegion.hidden = true;
 
         const defaultHost = document.createElement("div");
         defaultHost.className = "ave-builtin-composer";
-        // Mount host composer first; chips are injected *into* its shell so they
-        // dock with the bottom input (OpenClaw underlaps the thread).
         const unmountDefault = context.mountDefault(defaultHost);
         root.append(defaultHost);
         container.append(root);
@@ -242,7 +241,6 @@ export default defineControlUiPlugin({
             return Boolean(shell);
           }
           if (shell) {
-            // Prefer first child of shell so chips sit above the input chrome.
             anchor.insertBefore(chipRegion, anchor.firstChild);
           } else if (chipRegion.parentElement !== defaultHost) {
             defaultHost.insertBefore(chipRegion, defaultHost.firstChild);
@@ -251,7 +249,6 @@ export default defineControlUiPlugin({
           return Boolean(shell);
         };
 
-        // Lit renders the default composer asynchronously after mountDefault.
         if (!placeChipRegion()) {
           shellObserver = new MutationObserver(() => {
             if (placeChipRegion()) {
@@ -260,7 +257,6 @@ export default defineControlUiPlugin({
             }
           });
           shellObserver.observe(defaultHost, { childList: true, subtree: true });
-          // Bounded retries in case observer misses a microtask paint.
           let tries = 0;
           const retry = () => {
             if (disposed || placeChipRegion() || tries >= 20) return;
@@ -282,7 +278,7 @@ export default defineControlUiPlugin({
               { sessionKey: current.props.sessionKey, agentId: current.props.agentId },
             );
           } catch {
-            // Non-fatal: extension targeting degrades to no_active_session.
+            // Non-fatal
           }
         };
 
@@ -298,7 +294,7 @@ export default defineControlUiPlugin({
             const remove = document.createElement("button");
             remove.type = "button";
             remove.className = "ave-chip-remove";
-            remove.setAttribute("aria-label", `Selektion entfernen: ${chip.label}`);
+            remove.setAttribute("aria-label", t.removeSelectionAria(chip.label));
             remove.textContent = "×";
             remove.onclick = async () => {
               status.textContent = "";
@@ -331,7 +327,6 @@ export default defineControlUiPlugin({
           clearBtn.hidden = !hasChips;
           sendWithContextBtn.hidden = !hasChips;
           chipRegion.hidden = !hasChips;
-          // Re-assert placement after paint (host may remount shell on updates).
           placeChipRegion();
         };
 
@@ -410,15 +405,10 @@ export default defineControlUiPlugin({
           }
         };
 
-        /**
-         * Canonical Send wrap (C-010/C-011): prepare → props.send → send_outcome.
-         * mountDefault may still expose its own Send; agent_turn_prepare covers that path.
-         * INV-1: this button is the only chip-adjacent path that may call send().
-         */
         sendWithContextBtn.onclick = async () => {
           status.textContent = "";
           if (!current.props.canSend || current.props.sending) {
-            status.textContent = current.props.disabledReason ?? "Senden gerade nicht möglich";
+            status.textContent = current.props.disabledReason ?? t.sendNotPossible;
             return;
           }
           try {
@@ -455,7 +445,7 @@ export default defineControlUiPlugin({
             }
             renderChips(outcome.batch);
             if (!outcome.admitted) {
-              status.textContent = "Senden abgelehnt — Entwurf und Chips bleiben erhalten";
+              status.textContent = t.sendRejected;
             }
           } catch (error) {
             if (!current.signal.aborted && !disposed) {
@@ -473,7 +463,7 @@ export default defineControlUiPlugin({
                 sessionKey: current.props.sessionKey,
                 agentId: current.props.agentId,
                 tag: "button",
-                textSummary: "Test-Selektion",
+                textSummary: t.testSelection,
                 selector: "#ave-debug-test",
                 component: "TestButton",
                 file: "src/TestButton.tsx",
@@ -484,7 +474,7 @@ export default defineControlUiPlugin({
             if (current.signal.aborted || disposed) return;
             if (result.ok) {
               renderChips(result.batch);
-              status.textContent = result.deduped ? "Selektion aktualisiert" : "Test-Selektion hinzugefügt";
+              status.textContent = result.deduped ? t.selectionUpdated : t.testSelectionAdded;
             } else {
               status.textContent = result.message;
             }
