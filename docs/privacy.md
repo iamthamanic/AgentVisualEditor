@@ -21,4 +21,4 @@ Captured text/runtime fields apply redaction patterns for emails and secret-like
 
 ## Extension permissions
 
-Chrome permissions are minimized to what Inspect / side panel / capture require (NFR-004 / RISK-006). Site access may be optional/activeTab-style where possible; revoked site permission disables Inspect with a clear remediation message.
+Chrome permissions cover side panel, scripting, tabs, and **host access via `<all_urls>`** so Inspect Mode and element-preview screenshots work on http(s) pages without relying on ephemeral `activeTab` grants (NFR-004 / RISK-006). Revoking site access in Chrome disables capture with a clear remediation message in the side panel.

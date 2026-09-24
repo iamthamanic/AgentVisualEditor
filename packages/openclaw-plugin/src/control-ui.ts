@@ -215,16 +215,60 @@ export default defineControlUiPlugin({
 
         actions.append(clearBtn, sendWithContextBtn, testBtn);
         chipRegion.append(chipList, actions, status);
+        // Empty region must not occupy layout (welcome-overlap bug).
+        chipRegion.hidden = true;
 
         const defaultHost = document.createElement("div");
         defaultHost.className = "ave-builtin-composer";
+        // Mount host composer first; chips are injected *into* its shell so they
+        // dock with the bottom input (OpenClaw underlaps the thread).
         const unmountDefault = context.mountDefault(defaultHost);
-
-        root.append(chipRegion, defaultHost);
+        root.append(defaultHost);
         container.append(root);
 
         let watchDispose: (() => void) | undefined;
         let disposed = false;
+        let chipAnchor: HTMLElement | null = null;
+        let shellObserver: MutationObserver | undefined;
+
+        const placeChipRegion = (): boolean => {
+          if (disposed) return true;
+          const shell =
+            defaultHost.querySelector<HTMLElement>(".agent-chat__composer-shell") ??
+            defaultHost.querySelector<HTMLElement>(".agent-chat__composer-overlay") ??
+            null;
+          const anchor = shell ?? defaultHost;
+          if (chipAnchor === anchor && chipRegion.parentElement === anchor) {
+            return Boolean(shell);
+          }
+          if (shell) {
+            // Prefer first child of shell so chips sit above the input chrome.
+            anchor.insertBefore(chipRegion, anchor.firstChild);
+          } else if (chipRegion.parentElement !== defaultHost) {
+            defaultHost.insertBefore(chipRegion, defaultHost.firstChild);
+          }
+          chipAnchor = anchor;
+          return Boolean(shell);
+        };
+
+        // Lit renders the default composer asynchronously after mountDefault.
+        if (!placeChipRegion()) {
+          shellObserver = new MutationObserver(() => {
+            if (placeChipRegion()) {
+              shellObserver?.disconnect();
+              shellObserver = undefined;
+            }
+          });
+          shellObserver.observe(defaultHost, { childList: true, subtree: true });
+          // Bounded retries in case observer misses a microtask paint.
+          let tries = 0;
+          const retry = () => {
+            if (disposed || placeChipRegion() || tries >= 20) return;
+            tries += 1;
+            requestAnimationFrame(retry);
+          };
+          requestAnimationFrame(retry);
+        }
 
         const reportSession = async () => {
           try {
@@ -283,8 +327,12 @@ export default defineControlUiPlugin({
             item.append(label, remove);
             chipList.append(item);
           }
-          clearBtn.hidden = batch.selections.length === 0;
-          sendWithContextBtn.hidden = batch.selections.length === 0;
+          const hasChips = batch.selections.length > 0;
+          clearBtn.hidden = !hasChips;
+          sendWithContextBtn.hidden = !hasChips;
+          chipRegion.hidden = !hasChips;
+          // Re-assert placement after paint (host may remount shell on updates).
+          placeChipRegion();
         };
 
         const refresh = async () => {
@@ -480,6 +528,8 @@ export default defineControlUiPlugin({
           },
           dispose() {
             disposed = true;
+            shellObserver?.disconnect();
+            shellObserver = undefined;
             watchDispose?.();
             void feature
               .invoke(

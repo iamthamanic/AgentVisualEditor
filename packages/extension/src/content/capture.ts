@@ -129,6 +129,7 @@ export function captureSelectionFromElement(el: Element, page: {
   const selection: CapturedSelection = {
     page: { url: page.url },
     element,
+    devicePixelRatio: typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1,
   };
   if (page.title !== undefined) {
     selection.page.title = page.title;

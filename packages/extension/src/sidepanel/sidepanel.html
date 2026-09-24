@@ -9,13 +9,13 @@
   <body>
     <header class="ave-header">
       <h1>AgentVisualEditor</h1>
-      <p class="ave-subtitle">Inspect · Design · Screenshots</p>
+      <p class="ave-subtitle">Side Panel</p>
     </header>
 
     <section class="ave-status-card" aria-live="polite">
       <div class="ave-row">
         <span class="ave-label">OpenClaw</span>
-        <span id="connection" class="ave-value">Getrennt</span>
+        <span id="connection" class="ave-value" data-state="disconnected">Getrennt</span>
       </div>
       <div class="ave-row">
         <span class="ave-label">Chat</span>
@@ -25,96 +25,188 @@
         <span class="ave-label">Domscribe</span>
         <span id="domscribe" class="ave-value">Quellzuordnung nicht verfügbar</span>
       </div>
-    </section>
+      <p id="connectionDetail" class="ave-status-detail" data-tone="muted">Nicht gekoppelt — Verbindung aufklappen und Pairing-Code eingeben.</p>
 
-    <nav class="ave-tabs" role="tablist" aria-label="Seitenbereiche">
-      <button type="button" class="ave-tab" role="tab" id="tab-inspect" aria-selected="true" data-tab="inspect">Inspect</button>
-      <button type="button" class="ave-tab" role="tab" id="tab-design" aria-selected="false" data-tab="design">Design</button>
-      <button type="button" class="ave-tab" role="tab" id="tab-changes" aria-selected="false" data-tab="changes">Changes</button>
-      <button type="button" class="ave-tab" role="tab" id="tab-shots" aria-selected="false" data-tab="shots">Screenshots</button>
-      <button type="button" class="ave-tab" role="tab" id="tab-conn" aria-selected="false" data-tab="conn">Verbindung</button>
-    </nav>
-
-    <section id="panel-inspect" class="ave-panel" role="tabpanel" data-panel="inspect">
-      <div class="ave-row ave-row-toggle">
-        <span class="ave-label">Inspect Mode</span>
-        <button id="inspectToggle" type="button" class="ave-toggle" aria-pressed="false">AUS</button>
-      </div>
-      <p id="selectionHint" class="ave-hint">Kein Element ausgewählt</p>
-      <p id="error" class="ave-error" hidden></p>
-    </section>
-
-    <section id="panel-design" class="ave-panel" role="tabpanel" data-panel="design" hidden>
-      <p class="ave-banner" role="status">Vorschau — nicht committed (Browser-only)</p>
-      <p id="designSelection" class="ave-hint">Zuerst ein Element auswählen</p>
-      <fieldset id="designFields" class="ave-fieldset" disabled>
-        <label class="ave-field">
-          Padding
-          <input id="stylePadding" type="text" placeholder="z. B. 8px" autocomplete="off" />
-        </label>
-        <label class="ave-field">
-          Border-Radius
-          <input id="styleRadius" type="text" placeholder="z. B. 12px" autocomplete="off" />
-        </label>
-        <label class="ave-field">
-          Hintergrund
-          <input id="styleBg" type="text" placeholder="z. B. #0b6e4f" autocomplete="off" />
-        </label>
-        <label class="ave-field">
-          Farbe
-          <input id="styleColor" type="text" placeholder="z. B. #fff" autocomplete="off" />
-        </label>
-        <label class="ave-field">
-          Schriftgröße
-          <input id="styleFontSize" type="text" placeholder="z. B. 16px" autocomplete="off" />
-        </label>
-        <label class="ave-field">
-          Text-Inhalt
-          <input id="styleText" type="text" placeholder="Vorschau-Text" autocomplete="off" />
-        </label>
-        <label class="ave-field">
-          Kommentar am Element
-          <input id="styleComment" type="text" placeholder="Hinweis für den Agenten" autocomplete="off" />
-        </label>
-        <div class="ave-actions">
-          <button id="applyDesignBtn" type="button">Vorschau anwenden</button>
-          <button id="undoBtn" type="button" class="ave-secondary">Undo</button>
-          <button id="redoBtn" type="button" class="ave-secondary">Redo</button>
+      <details id="connDetails" class="ave-disclosure">
+        <summary class="ave-disclosure__summary">
+          <span class="ave-disclosure__icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6.2 9.8a2.6 2.6 0 0 1 0-3.7l1.4-1.4a2.6 2.6 0 0 1 3.7 3.7L10.5 9.2" />
+              <path d="M9.8 6.2a2.6 2.6 0 0 1 0 3.7L8.4 11.3a2.6 2.6 0 1 1-3.7-3.7L5.5 6.8" />
+            </svg>
+          </span>
+          <span class="ave-disclosure__title">Verbindung</span>
+          <span class="ave-disclosure__chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="ave-disclosure__body">
+          <p id="pairBanner" class="ave-pair-banner" role="status" hidden></p>
+          <label class="ave-field">
+            Gateway-URL
+            <input id="gatewayUrl" type="url" placeholder="http://127.0.0.1:18789" autocomplete="off" />
+          </label>
+          <label class="ave-field">
+            Pairing-Code
+            <input id="pairingCode" type="text" placeholder="ABCD2345" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="ave-actions">
+            <button id="pairBtn" type="button" class="ave-btn">
+              <span class="ave-btn-label">Koppeln</span>
+              <span class="ave-confetti" id="pairConfetti" aria-hidden="true"></span>
+            </button>
+            <button id="disconnectBtn" type="button" class="ave-secondary">Trennen</button>
+          </div>
         </div>
-      </fieldset>
-    </section>
+      </details>
 
-    <section id="panel-changes" class="ave-panel" role="tabpanel" data-panel="changes" hidden>
-      <div class="ave-actions" style="margin-bottom: 10px">
-        <button id="clearAllBtn" type="button" class="ave-secondary">Alle zurücksetzen</button>
-      </div>
-      <ul id="changeList" class="ave-change-list"></ul>
-      <p id="changesEmpty" class="ave-hint">Keine Preview-Änderungen</p>
-    </section>
+      <details id="inspectDetails" class="ave-disclosure" open>
+        <summary class="ave-disclosure__summary">
+          <span class="ave-disclosure__icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="7" cy="7" r="4.2" />
+              <path d="M10.2 10.2 14 14" />
+              <path d="M7 4.6v4.8M4.6 7h4.8" />
+            </svg>
+          </span>
+          <span class="ave-disclosure__title">Visual Inspector</span>
+          <span class="ave-disclosure__chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="ave-disclosure__body">
+          <div class="ave-row ave-row-toggle">
+            <span class="ave-label">Modus</span>
+            <button id="inspectToggle" type="button" class="ave-toggle" aria-pressed="false">AUS</button>
+          </div>
+          <div id="selectionCard" class="ave-selection-card" hidden>
+            <div class="ave-selection-card__head">
+              <span class="ave-label">Selektion</span>
+              <button id="copySelectionBtn" type="button" class="ave-copy-btn" title="Selektion kopieren">
+                Copy
+              </button>
+            </div>
+            <div id="selectionPreviewWrap" class="ave-selection-preview" hidden>
+              <p id="selectionPreviewStatus" class="ave-selection-preview__status" hidden></p>
+              <button id="selectionPreviewRetry" type="button" class="ave-copy-btn" hidden>Erneut versuchen</button>
+              <img id="selectionPreview" alt="Element-Vorschau" hidden />
+            </div>
+            <div class="ave-row">
+              <span class="ave-label">Element</span>
+              <span id="selectionTag" class="ave-value ave-mono"></span>
+            </div>
+            <div class="ave-row">
+              <span class="ave-label">Text</span>
+              <span id="selectionText" class="ave-value"></span>
+            </div>
+            <div class="ave-row">
+              <span class="ave-label">Selektor</span>
+              <span id="selectionSelector" class="ave-value ave-mono ave-wrap"></span>
+            </div>
+            <div class="ave-row">
+              <span class="ave-label">Seite</span>
+              <span id="selectionPage" class="ave-value ave-wrap"></span>
+            </div>
+            <div class="ave-row">
+              <span class="ave-label">Größe</span>
+              <span id="selectionBox" class="ave-value ave-mono"></span>
+            </div>
+            <p id="selectionSync" class="ave-hint"></p>
+          </div>
+          <p id="selectionHint" class="ave-hint">Kein Element ausgewählt — Inspector AN, dann Element auf der Seite anklicken.</p>
+          <p id="error" class="ave-error" hidden></p>
+        </div>
+      </details>
 
-    <section id="panel-shots" class="ave-panel" role="tabpanel" data-panel="shots" hidden>
-      <p class="ave-hint">Screenshots ≤ 2 MiB, referenziert per selectionId (TTL).</p>
-      <div class="ave-actions">
-        <button id="shotViewportBtn" type="button">Viewport</button>
-        <button id="shotElementBtn" type="button" class="ave-secondary">Element</button>
-      </div>
-      <p id="shotHint" class="ave-hint"></p>
-    </section>
+      <details id="designDetails" class="ave-disclosure">
+        <summary class="ave-disclosure__summary">
+          <span class="ave-disclosure__icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.5 13.5 12.2 3.8a1.5 1.5 0 0 1 2.1 2.1L4.6 13.5H2.5v-2.1Z" />
+              <path d="M10.2 5.8 12.2 7.8" />
+            </svg>
+          </span>
+          <span class="ave-disclosure__title">Design</span>
+          <span class="ave-disclosure__chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="ave-disclosure__body">
+          <p class="ave-banner" role="status">Vorschau — nicht committed (Browser-only)</p>
+          <p id="designSelection" class="ave-hint">Zuerst ein Element auswählen</p>
+          <fieldset id="designFields" class="ave-fieldset" disabled>
+            <label class="ave-field">
+              Padding
+              <input id="stylePadding" type="text" placeholder="z. B. 8px" autocomplete="off" />
+            </label>
+            <label class="ave-field">
+              Border-Radius
+              <input id="styleRadius" type="text" placeholder="z. B. 12px" autocomplete="off" />
+            </label>
+            <label class="ave-field">
+              Hintergrund
+              <input id="styleBg" type="text" placeholder="z. B. #0b6e4f" autocomplete="off" />
+            </label>
+            <label class="ave-field">
+              Farbe
+              <input id="styleColor" type="text" placeholder="z. B. #fff" autocomplete="off" />
+            </label>
+            <label class="ave-field">
+              Schriftgröße
+              <input id="styleFontSize" type="text" placeholder="z. B. 16px" autocomplete="off" />
+            </label>
+            <label class="ave-field">
+              Text-Inhalt
+              <input id="styleText" type="text" placeholder="Vorschau-Text" autocomplete="off" />
+            </label>
+            <label class="ave-field">
+              Kommentar am Element
+              <input id="styleComment" type="text" placeholder="Hinweis für den Agenten" autocomplete="off" />
+            </label>
+            <div class="ave-actions">
+              <button id="applyDesignBtn" type="button">Vorschau anwenden</button>
+              <button id="undoBtn" type="button" class="ave-secondary">Undo</button>
+              <button id="redoBtn" type="button" class="ave-secondary">Redo</button>
+            </div>
+          </fieldset>
+        </div>
+      </details>
 
-    <section id="panel-conn" class="ave-panel" role="tabpanel" data-panel="conn" hidden>
-      <h2>Verbindung</h2>
-      <label class="ave-field">
-        Gateway-URL
-        <input id="gatewayUrl" type="url" placeholder="http://127.0.0.1:18789" autocomplete="off" />
-      </label>
-      <label class="ave-field">
-        Pairing-Code
-        <input id="pairingCode" type="text" placeholder="ABCD2345" autocomplete="off" spellcheck="false" />
-      </label>
-      <div class="ave-actions">
-        <button id="pairBtn" type="button">Koppeln</button>
-        <button id="disconnectBtn" type="button" class="ave-secondary">Trennen</button>
-      </div>
+      <details id="changesDetails" class="ave-disclosure">
+        <summary class="ave-disclosure__summary">
+          <span class="ave-disclosure__icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 3.5h8M4 8h8M4 12.5h5" />
+              <path d="M11.5 11.2 13 12.7 15 10.5" />
+            </svg>
+          </span>
+          <span class="ave-disclosure__title">Changes</span>
+          <span class="ave-disclosure__chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="ave-disclosure__body">
+          <div class="ave-actions" style="margin-bottom: 10px">
+            <button id="clearAllBtn" type="button" class="ave-secondary">Alle zurücksetzen</button>
+          </div>
+          <ul id="changeList" class="ave-change-list"></ul>
+          <p id="changesEmpty" class="ave-hint">Keine Preview-Änderungen</p>
+        </div>
+      </details>
+
+      <details id="shotsDetails" class="ave-disclosure">
+        <summary class="ave-disclosure__summary">
+          <span class="ave-disclosure__icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="12" height="9" rx="1.5" />
+              <circle cx="8" cy="8.5" r="2.2" />
+              <path d="M5.5 4 6.2 2.8h3.6L10.5 4" />
+            </svg>
+          </span>
+          <span class="ave-disclosure__title">Screenshots</span>
+          <span class="ave-disclosure__chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="ave-disclosure__body">
+          <p class="ave-hint">Screenshots ≤ 2 MiB, referenziert per selectionId (TTL).</p>
+          <div class="ave-actions">
+            <button id="shotViewportBtn" type="button">Viewport</button>
+            <button id="shotElementBtn" type="button" class="ave-secondary">Element</button>
+          </div>
+          <p id="shotHint" class="ave-hint"></p>
+        </div>
+      </details>
     </section>
 
     <script type="module" src="sidepanel.js"></script>

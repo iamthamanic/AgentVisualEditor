@@ -4,6 +4,7 @@
  */
 
 import { BridgeClient, completePairing } from "../bridge/client.js";
+import { sleep } from "../editor/element-preview.js";
 import { boundPngDataUrl, sha256Hex } from "../editor/screenshot-bounds.js";
 import {
   clearPairing,
@@ -20,6 +21,7 @@ import type {
   ContentToBackground,
   DomscribeUiState,
   ExtensionToBackground,
+  LastSelectionSummary,
   VisualChangePayload,
 } from "../shared/types.js";
 
@@ -35,6 +37,7 @@ let chat: ActiveChatTarget = {
 let inspectEnabled = false;
 let lastSelectionId: string | null = null;
 let lastSelector: string | null = null;
+let lastSelection: LastSelectionSummary | null = null;
 let lastError: string | null = null;
 let lastArtifactId: string | null = null;
 let domscribe: DomscribeUiState = "unavailable";
@@ -142,6 +145,7 @@ function statusPayload(): BackgroundToUi {
     inspectEnabled,
     lastSelectionId,
     lastSelector,
+    lastSelection,
     lastError,
     paired: bridge !== null || connection === "connected" || connection === "reconnecting",
     previewEditingEnabled,
@@ -153,18 +157,205 @@ function broadcastStatus(): void {
   chrome.runtime.sendMessage(statusPayload()).catch(() => undefined);
 }
 
+async function ensureInspectOnTab(tabId: number, enabled: boolean): Promise<boolean> {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "inspect_set", enabled });
+    return true;
+  } catch {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["content.js"],
+      });
+      await chrome.tabs.sendMessage(tabId, { type: "inspect_set", enabled });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
 async function broadcastInspect(): Promise<void> {
   const tabs = await chrome.tabs.query({});
   await Promise.all(
     tabs.map(async (tab) => {
       if (tab.id === undefined) return;
-      try {
-        await chrome.tabs.sendMessage(tab.id, { type: "inspect_set", enabled: inspectEnabled });
-      } catch {
-        // Tab without content script (chrome:// etc.)
-      }
+      if (tab.url && !/^https?:/i.test(tab.url)) return;
+      await ensureInspectOnTab(tab.id, inspectEnabled);
     }),
   );
+}
+
+const CAPTURE_MIN_INTERVAL_MS = 1100;
+
+type SelectionPreviewJob = {
+  selectionId: string;
+  tabId: number;
+  windowId: number;
+  box: { x: number; y: number; width: number; height: number };
+  devicePixelRatio: number;
+};
+
+let lastCaptureVisibleTabAt = 0;
+let previewJobLatest: SelectionPreviewJob | null = null;
+let previewWorkerRunning = false;
+
+let lastPreviewJob: SelectionPreviewJob | null = null;
+
+function enqueueSelectionPreview(job: SelectionPreviewJob): void {
+  lastPreviewJob = job;
+  previewJobLatest = job;
+  void pumpSelectionPreviewQueue();
+}
+
+async function pumpSelectionPreviewQueue(): Promise<void> {
+  if (previewWorkerRunning) {
+    return;
+  }
+  previewWorkerRunning = true;
+  try {
+    while (previewJobLatest) {
+      const job = previewJobLatest;
+      previewJobLatest = null;
+
+      if (!lastSelection || lastSelection.id !== job.selectionId) {
+        continue;
+      }
+
+      const waitMs = CAPTURE_MIN_INTERVAL_MS - (Date.now() - lastCaptureVisibleTabAt);
+      if (waitMs > 0) {
+        setPreviewPending(
+          job.selectionId,
+          `Vorschau wartet kurz (${Math.ceil(waitMs / 100) / 10}s) — Chrome-Screenshot-Limit…`,
+        );
+        await sleep(waitMs);
+      }
+
+      // A newer click may have superseded this job while we waited.
+      if (previewJobLatest) {
+        continue;
+      }
+      if (!lastSelection || lastSelection.id !== job.selectionId) {
+        continue;
+      }
+
+      await captureSelectionPreviewOnce(job);
+    }
+  } finally {
+    previewWorkerRunning = false;
+    if (previewJobLatest) {
+      void pumpSelectionPreviewQueue();
+    }
+  }
+}
+
+function setPreviewPending(selectionId: string, message: string): void {
+  if (!lastSelection || lastSelection.id !== selectionId) {
+    return;
+  }
+  lastSelection = {
+    ...lastSelection,
+    previewStatus: "pending",
+    previewError: message,
+  };
+  broadcastStatus();
+}
+
+function setPreviewFailed(selectionId: string, message: string): void {
+  if (!lastSelection || lastSelection.id !== selectionId) {
+    return;
+  }
+  lastSelection = {
+    ...lastSelection,
+    previewStatus: "failed",
+    previewError: message,
+  };
+  broadcastStatus();
+}
+
+function isCaptureQuotaError(message: string): boolean {
+  return /CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i.test(message);
+}
+
+const QUOTA_BACKOFF_MS = [1500, 2500, 4000];
+
+let captureChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * Every captureVisibleTab call in the extension goes through here: calls are
+ * serialized, and the interval counts from the last attempt (failed ones too).
+ */
+function captureVisibleTabRateLimited(windowId: number): Promise<string> {
+  const run = async (): Promise<string> => {
+    const waitMs = CAPTURE_MIN_INTERVAL_MS - (Date.now() - lastCaptureVisibleTabAt);
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+    lastCaptureVisibleTabAt = Date.now();
+    return chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+  };
+  const next = captureChain.then(run, run);
+  captureChain = next.catch(() => undefined);
+  return next;
+}
+
+async function captureSelectionPreviewOnce(input: SelectionPreviewJob): Promise<void> {
+  try {
+    // Let the inspect overlay paint-hide settle.
+    await sleep(60);
+
+    let dataUrl: string | undefined;
+    let lastErr = "";
+    for (let attempt = 0; attempt <= QUOTA_BACKOFF_MS.length; attempt += 1) {
+      try {
+        dataUrl = await captureVisibleTabRateLimited(input.windowId);
+        break;
+      } catch (error) {
+        lastErr = error instanceof Error ? error.message : String(error);
+        const backoff = QUOTA_BACKOFF_MS[attempt];
+        if (!isCaptureQuotaError(lastErr) || backoff === undefined) {
+          break;
+        }
+        setPreviewPending(
+          input.selectionId,
+          `Chrome erlaubt nur wenige Screenshots pro Sekunde — neuer Versuch in ${backoff / 1000}s…`,
+        );
+        await sleep(backoff);
+        if (previewJobLatest || !lastSelection || lastSelection.id !== input.selectionId) {
+          return;
+        }
+      }
+    }
+
+    if (dataUrl === undefined) {
+      const hint = /all_urls|activeTab/i.test(lastErr)
+        ? "Extension hat keine Screenshot-Berechtigung — in chrome://extensions neu laden und Zugriff auf alle Websites erlauben. "
+        : "";
+      setPreviewFailed(input.selectionId, `${hint}Screenshot fehlgeschlagen: ${lastErr}`);
+      return;
+    }
+
+    if (!lastSelection || lastSelection.id !== input.selectionId) {
+      return;
+    }
+
+    chrome.runtime
+      .sendMessage({
+        type: "selection_preview_frame",
+        selectionId: input.selectionId,
+        viewportDataUrl: dataUrl,
+        box: input.box,
+        devicePixelRatio: input.devicePixelRatio,
+      })
+      .catch(() => {
+        setPreviewFailed(input.selectionId, "Side Panel nicht erreichbar für Vorschau-Crop");
+      });
+  } catch (error) {
+    setPreviewFailed(
+      input.selectionId,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -217,12 +408,24 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
     },
     onSelectionResult: (result) => {
       if (result.ok && result.selectionId) {
+        const previousId = lastSelectionId;
         lastSelectionId = result.selectionId;
         lastError = null;
+        if (lastSelection) {
+          lastSelection = {
+            ...lastSelection,
+            id: result.selectionId,
+            synced: true,
+          };
+        }
         if (result.requestId !== undefined) {
           const pending = pendingCreateByRequestId.get(result.requestId);
           if (pending !== undefined) {
             rememberSelectionOwner(result.selectionId, pending.tabId, pending.pageUrl);
+            if (previousId !== null && previousId !== result.selectionId) {
+              selectionTabById.delete(previousId);
+              selectionPageUrlById.delete(previousId);
+            }
             pendingCreateByRequestId.delete(result.requestId);
           }
         }
@@ -235,6 +438,9 @@ function attachBridge(config: Awaited<ReturnType<typeof loadPairing>>): void {
         }
       } else if (result.message) {
         lastError = result.message;
+        if (lastSelection) {
+          lastSelection = { ...lastSelection, synced: false };
+        }
         if (result.requestId !== undefined) {
           pendingCreateByRequestId.delete(result.requestId);
         }
@@ -414,6 +620,49 @@ chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentTo
       return;
     }
 
+    if (message.type === "content_ready") {
+      if (inspectEnabled && sender.tab?.id !== undefined) {
+        await ensureInspectOnTab(sender.tab.id, true);
+      }
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (message.type === "selection_preview_result") {
+      if (lastSelection && lastSelection.id === message.selectionId) {
+        if (message.ok && typeof message.previewDataUrl === "string") {
+          const next = { ...lastSelection };
+          delete next.previewError;
+          lastSelection = {
+            ...next,
+            previewDataUrl: message.previewDataUrl,
+            previewStatus: "ready",
+          };
+        } else {
+          lastSelection = {
+            ...lastSelection,
+            previewStatus: "failed",
+            previewError:
+              typeof message.message === "string"
+                ? message.message
+                : "Vorschau-Crop fehlgeschlagen",
+          };
+        }
+        broadcastStatus();
+      }
+      sendResponse({ ok: true, status: statusPayload() });
+      return;
+    }
+
+    if (message.type === "selection_preview_retry") {
+      if (lastPreviewJob && lastSelection && lastSelection.id === lastPreviewJob.selectionId) {
+        setPreviewPending(lastPreviewJob.selectionId, "Vorschau wird neu erstellt…");
+        enqueueSelectionPreview(lastPreviewJob);
+      }
+      sendResponse({ ok: true, status: statusPayload() });
+      return;
+    }
+
     if (message.type === "set_inspect") {
       inspectEnabled = message.enabled;
       await broadcastInspect();
@@ -439,7 +688,43 @@ chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentTo
       const local = await loadLocalSelections();
       local.push(selection);
       await saveLocalSelections(local);
+
+      // Local-first: selection is visible in the side panel without OpenClaw.
+      const localId = `local_${crypto.randomUUID()}`;
+      lastSelectionId = localId;
       lastSelector = selection.element.selector;
+      lastSelection = {
+        id: localId,
+        tag: selection.element.tag,
+        selector: selection.element.selector,
+        pageUrl: selection.page.url,
+        synced: false,
+        previewStatus: selection.element.box !== undefined ? "pending" : "failed",
+        ...(selection.page.title !== undefined ? { pageTitle: selection.page.title } : {}),
+        ...(selection.element.textSummary !== undefined
+          ? { textSummary: selection.element.textSummary }
+          : {}),
+        ...(selection.element.box !== undefined ? { box: selection.element.box } : {}),
+      };
+      lastError = null;
+      if (tabId !== undefined) {
+        rememberSelectionOwner(localId, tabId, selection.page.url);
+      }
+      broadcastStatus();
+
+      // Element preview crop (async — does not block selection UI).
+      const box = selection.element.box;
+      const windowId = sender.tab?.windowId;
+      if (box !== undefined && tabId !== undefined && windowId !== undefined) {
+        enqueueSelectionPreview({
+          selectionId: localId,
+          tabId,
+          windowId,
+          box,
+          devicePixelRatio: selection.devicePixelRatio ?? 1,
+        });
+      }
+
       const requestId = `sel_${crypto.randomUUID()}`;
       if (tabId !== undefined) {
         pendingCreateByRequestId.set(requestId, {
@@ -447,7 +732,11 @@ chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentTo
           pageUrl: selection.page.url,
         });
       }
-      bridge?.sendSelectionCreate(selection, requestId);
+      if (bridge && connection === "connected") {
+        bridge.sendSelectionCreate(selection, requestId);
+      } else if (pendingCreateByRequestId.has(requestId)) {
+        pendingCreateByRequestId.delete(requestId);
+      }
       sendResponse({ ok: true });
       return;
     }
@@ -580,7 +869,9 @@ chrome.runtime.onMessage.addListener((message: ExtensionToBackground | ContentTo
         return;
       }
       try {
-        const dataUrl = await chrome.tabs.captureVisibleTab({ format: "png" });
+        const dataUrl = await captureVisibleTabRateLimited(
+          (await chrome.windows.getCurrent()).id ?? chrome.windows.WINDOW_ID_CURRENT,
+        );
         const bounded = boundPngDataUrl(dataUrl);
         if (!bounded.ok) {
           sendResponse({ ok: false, message: bounded.message, code: bounded.code });

@@ -1,17 +1,30 @@
-/* AgentVisualEditor composer chip region — uses host theme CSS variables. */
+/* AgentVisualEditor composer chip region — uses host theme CSS variables.
+ * Chips are injected into `.agent-chat__composer-shell` so they dock with the
+ * bottom input and do not float over the welcome suggestions. */
+
 .ave-composer-root {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
+  display: contents;
   color: var(--text);
+}
+
+.ave-builtin-composer {
+  display: contents;
+  width: 100%;
 }
 
 .ave-chip-region {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 2px;
+  width: 100%;
+  max-width: var(--chat-thread-max-width, 48rem);
+  margin: 0 auto;
+  padding: 0 2px 4px;
+  box-sizing: border-box;
+}
+
+.ave-chip-region[hidden] {
+  display: none !important;
 }
 
 .ave-chip-list {
@@ -89,10 +102,6 @@
   min-height: 1.2em;
   font-size: 0.85em;
   color: var(--muted, var(--text));
-}
-
-.ave-builtin-composer {
-  width: 100%;
 }
 
 .ave-health-page {
