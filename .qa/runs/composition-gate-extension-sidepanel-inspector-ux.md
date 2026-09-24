@@ -1,6 +1,6 @@
 # Composition Gate — extension-sidepanel-inspector-ux
 
-- HEAD_SHA: a7684d624f9854eff11b0a54c5b32f6a25bf801a
+- HEAD_SHA: ab08c0689bdd92b00a412472f6420a9c77f78ce5
 - Date: 2026-09-24
 - Verdict: CLEAR
 
