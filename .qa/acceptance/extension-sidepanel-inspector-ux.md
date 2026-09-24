@@ -6,4 +6,6 @@ Ship a Cursor-like dark side panel (disclosure layout), local-first Visual Inspe
 
 ## Composition Gate
 
-See `.qa/runs/composition-gate-extension-sidepanel-inspector-ux.md`.
+- Verdict: CLEAR
+- HEAD_SHA: 24781939196c86591f823776d7c2a25550355035
+- Proof: `.qa/runs/composition-gate-extension-sidepanel-inspector-ux.md`
