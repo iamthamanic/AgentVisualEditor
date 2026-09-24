@@ -6,4 +6,6 @@ Ship AVE+eye extension icons, DE/EN UI (side panel language dropdown with ðŸ‡©ðŸ
 
 ## Composition Gate
 
-See `.qa/runs/composition-gate-icons-i18n-install-docs.md`.
+- Verdict: CLEAR
+- HEAD_SHA: 61c9f96432605c23dc62e425edeb101b08f7fd83
+- Proof: `.qa/runs/composition-gate-icons-i18n-install-docs.md`
